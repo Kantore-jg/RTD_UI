@@ -156,7 +156,6 @@ function handleDemoLogin(role) {
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
                   <Label for="password">Mot de passe</Label>
-                  <a href="#" class="text-xs text-primary hover:underline">Mot de passe oublié ?</a>
                 </div>
                 <div class="relative">
                   <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -206,7 +205,7 @@ function handleDemoLogin(role) {
               </Button>
             </form>
           </CardContent>
-
+<!-- 
           <CardFooter class="flex flex-col space-y-4">
             <div class="relative w-full">
               <div class="absolute inset-0 flex items-center">
@@ -231,12 +230,12 @@ function handleDemoLogin(role) {
                 Employé
               </Button>
             </div>
-          </CardFooter>
+          </CardFooter> -->
         </Card>
 
         <p class="text-center text-sm text-muted-foreground">
           Besoin d'aide ?
-          <a href="#" class="text-primary hover:underline font-medium">Contacter le support</a>
+          <a href="/contact" class="text-primary hover:underline font-medium">Contacter le support</a>
         </p>
       </div>
     </div>

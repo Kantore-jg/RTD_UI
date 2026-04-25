@@ -308,10 +308,6 @@ function handleLogout() {
                   <Label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Nom de l'entreprise</Label>
                   <Input v-model="orgForm.name" class="bg-slate-50 border-slate-200" />
                 </div>
-                <div class="space-y-2">
-                  <Label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Domaine</Label>
-                  <Input v-model="orgForm.domain" class="bg-slate-50 border-slate-200" />
-                </div>
               </div>
               <div class="space-y-2">
                 <Label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Adresse du siège</Label>
@@ -501,22 +497,7 @@ function handleLogout() {
                   </div>
                 </div>
               </div>
-              <div class="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100">
-                <div>
-                  <p class="text-sm font-bold text-slate-800">Authentification à deux facteurs</p>
-                  <p class="text-xs text-slate-500">Renforcez la sécurité de votre compte.</p>
-                </div>
-                <Switch v-model:checked="securityForm.twoFactor" />
-              </div>
-              <div class="space-y-2">
-                <Label class="text-xs font-bold text-slate-500 uppercase">Expiration de session (minutes)</Label>
-                <select v-model="securityForm.sessionTimeout" class="w-full h-10 px-3 rounded-md border border-slate-200 text-sm bg-white">
-                  <option value="15">15 minutes</option>
-                  <option value="30">30 minutes</option>
-                  <option value="60">1 heure</option>
-                  <option value="120">2 heures</option>
-                </select>
-              </div>
+
               <div class="flex justify-end">
                 <Button class="text-xs font-bold" @click="changePassword">
                   <Key class="w-3.5 h-3.5 mr-1" />Changer le mot de passe

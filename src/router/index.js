@@ -11,6 +11,10 @@ const routes = [
     component: () => import('@/pages/auth/LoginPage.vue'),
   },
   {
+    path: '/contact',
+    component: () => import('@/pages/landing/ContactPage.vue'),
+  },
+  {
     path: '/',
     component: () => import('@/components/layout/Shell.vue'),
     meta: { requiresAuth: true },

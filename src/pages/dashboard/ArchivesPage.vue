@@ -61,7 +61,81 @@ const showAccessLog = ref(false)
 const selectedFile = ref(null)
 
 const newFolderName = ref('')
-const newFile = ref({ name: '', type: 'PDF', category: '', folderId: null })
+const newFile = ref({ name: '', type: 'PDF', category: '', folderId: null, size: '0 KB' })
+const uploadedFile = ref(null)
+const isDragging = ref(false)
+const fileInputRef = ref(null)
+
+const extensionToType = {
+  pdf: 'PDF',
+  doc: 'DOCX', docx: 'DOCX',
+  xls: 'XLSX', xlsx: 'XLSX',
+  csv: 'CSV',
+  ppt: 'PPTX', pptx: 'PPTX',
+  jpg: 'JPG', jpeg: 'JPG',
+  png: 'PNG',
+  gif: 'GIF',
+  svg: 'SVG',
+  txt: 'TXT',
+  zip: 'ZIP', rar: 'RAR', '7z': '7Z',
+}
+
+const extensionToCategory = {
+  pdf: 'Document',
+  doc: 'Document', docx: 'Document',
+  xls: 'Tableur', xlsx: 'Tableur', csv: 'Tableur',
+  ppt: 'Présentation', pptx: 'Présentation',
+  jpg: 'Image', jpeg: 'Image', png: 'Image', gif: 'Image', svg: 'Image',
+  txt: 'Texte',
+  zip: 'Archive', rar: 'Archive', '7z': 'Archive',
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function detectFileType(filename) {
+  const ext = filename.split('.').pop().toLowerCase()
+  return extensionToType[ext] || ext.toUpperCase()
+}
+
+function detectFileCategory(filename) {
+  const ext = filename.split('.').pop().toLowerCase()
+  return extensionToCategory[ext] || 'Général'
+}
+
+function handleFileSelect(event) {
+  const file = event.target.files?.[0]
+  if (file) processSelectedFile(file)
+}
+
+function handleDrop(event) {
+  isDragging.value = false
+  const file = event.dataTransfer.files?.[0]
+  if (file) processSelectedFile(file)
+}
+
+function processSelectedFile(file) {
+  uploadedFile.value = file
+  newFile.value.name = file.name
+  newFile.value.type = detectFileType(file.name)
+  newFile.value.size = formatFileSize(file.size)
+  if (!newFile.value.category) {
+    newFile.value.category = detectFileCategory(file.name)
+  }
+}
+
+function removeSelectedFile() {
+  uploadedFile.value = null
+  newFile.value = { name: '', type: 'PDF', category: '', folderId: null, size: '0 KB' }
+  if (fileInputRef.value) fileInputRef.value.value = ''
+}
+
+function triggerFileInput() {
+  fileInputRef.value?.click()
+}
 
 const filteredFiles = computed(() => {
   let list = files.value
@@ -131,8 +205,8 @@ function createFolder() {
 
 let nextFileId = 6
 function uploadFile() {
-  if (!newFile.value.name) {
-    toast.error('Entrez un nom de fichier')
+  if (!uploadedFile.value) {
+    toast.error('Veuillez sélectionner un fichier à archiver.')
     return
   }
   files.value.push({
@@ -140,7 +214,7 @@ function uploadFile() {
     name: newFile.value.name,
     type: newFile.value.type,
     category: newFile.value.category || 'Général',
-    size: '0 KB',
+    size: newFile.value.size,
     date: new Date().toISOString().split('T')[0],
     owner: 'Moi',
     folderId: newFile.value.folderId || currentFolderId.value,
@@ -150,9 +224,9 @@ function uploadFile() {
     const folder = folders.value.find(f => f.id === (newFile.value.folderId || currentFolderId.value))
     if (folder) folder.filesCount++
   }
-  newFile.value = { name: '', type: 'PDF', category: '', folderId: null }
+  removeSelectedFile()
   showUploadFile.value = false
-  toast.success('Fichier archivé')
+  toast.success('Fichier archivé avec succès')
 }
 
 function viewAccessLog(file) {
@@ -218,43 +292,102 @@ function exportData() {
               Archiver un fichier
             </Button>
           </DialogTrigger>
-          <DialogContent class="sm:max-w-[425px]">
+          <DialogContent class="sm:max-w-[520px]">
             <DialogHeader>
               <DialogTitle>Archiver un fichier</DialogTitle>
-              <DialogDescription>Ajoutez un document à l'archive.</DialogDescription>
+              <DialogDescription>Glissez-déposez ou sélectionnez un document. Le type sera détecté automatiquement.</DialogDescription>
             </DialogHeader>
             <div class="grid gap-4 py-4">
-              <div class="space-y-2">
-                <Label class="text-xs font-bold uppercase text-slate-500">Nom du fichier *</Label>
-                <Input v-model="newFile.name" placeholder="Ex: Rapport_Q2_2026.pdf" />
-              </div>
-              <div class="grid grid-cols-2 gap-4">
-                <div class="space-y-2">
-                  <Label class="text-xs font-bold uppercase text-slate-500">Type</Label>
-                  <select v-model="newFile.type" class="w-full h-10 px-3 rounded-md border border-slate-200 text-sm bg-white">
-                    <option value="PDF">PDF</option>
-                    <option value="DOCX">DOCX</option>
-                    <option value="XLSX">XLSX</option>
-                    <option value="JPG">Image JPG</option>
-                    <option value="PNG">Image PNG</option>
-                  </select>
+              <!-- Drop Zone -->
+              <input
+                ref="fileInputRef"
+                type="file"
+                class="hidden"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.svg,.txt,.zip,.rar,.7z"
+                @change="handleFileSelect"
+              />
+              <div
+                v-if="!uploadedFile"
+                class="relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all"
+                :class="isDragging ? 'border-primary bg-primary/5 scale-[1.01]' : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30'"
+                @click="triggerFileInput"
+                @dragover.prevent="isDragging = true"
+                @dragleave.prevent="isDragging = false"
+                @drop.prevent="handleDrop"
+              >
+                <div class="flex flex-col items-center gap-3">
+                  <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+                    <Upload class="w-7 h-7 text-primary" />
+                  </div>
+                  <div>
+                    <p class="font-semibold text-sm">
+                      {{ isDragging ? 'Déposez le fichier ici' : 'Glissez-déposez votre fichier ici' }}
+                    </p>
+                    <p class="text-xs text-muted-foreground mt-1">ou <span class="text-primary font-medium underline underline-offset-2">parcourir vos fichiers</span></p>
+                  </div>
+                  <p class="text-[10px] text-muted-foreground/60 uppercase tracking-wider font-bold">PDF, DOCX, XLSX, Images, CSV, ZIP...</p>
                 </div>
+              </div>
+
+              <!-- Selected File Preview -->
+              <div
+                v-else
+                class="relative border-2 rounded-xl p-4 bg-muted/20"
+              >
+                <div class="flex items-center gap-4">
+                  <div class="w-12 h-12 rounded-xl flex items-center justify-center border shadow-sm"
+                    :class="{
+                      'bg-red-50 text-red-500 border-red-100': newFile.type === 'PDF',
+                      'bg-blue-50 text-blue-500 border-blue-100': newFile.type === 'DOCX',
+                      'bg-emerald-50 text-emerald-500 border-emerald-100': ['XLSX', 'CSV'].includes(newFile.type),
+                      'bg-amber-50 text-amber-500 border-amber-100': ['JPG', 'PNG', 'GIF', 'SVG'].includes(newFile.type),
+                      'bg-slate-50 text-slate-500 border-slate-100': !['PDF', 'DOCX', 'XLSX', 'CSV', 'JPG', 'PNG', 'GIF', 'SVG'].includes(newFile.type),
+                    }"
+                  >
+                    <component :is="fileIcon(newFile.type)" class="w-6 h-6" />
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="font-bold text-sm truncate">{{ uploadedFile.name }}</p>
+                    <div class="flex items-center gap-3 mt-0.5">
+                      <Badge variant="secondary" class="font-black text-[9px] uppercase tracking-widest">{{ newFile.type }}</Badge>
+                      <span class="text-xs text-muted-foreground font-medium">{{ newFile.size }}</span>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground hover:text-red-500" @click="removeSelectedFile">
+                    <Trash2 class="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <!-- Category & Folder -->
+              <div class="grid grid-cols-2 gap-4">
                 <div class="space-y-2">
                   <Label class="text-xs font-bold uppercase text-slate-500">Catégorie</Label>
                   <Input v-model="newFile.category" placeholder="RH, Finance, ..." />
                 </div>
+                <div class="space-y-2">
+                  <Label class="text-xs font-bold uppercase text-slate-500">Dossier</Label>
+                  <select v-model="newFile.folderId" class="w-full h-10 px-3 rounded-md border border-input text-sm bg-background">
+                    <option :value="null">Aucun (racine)</option>
+                    <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+                  </select>
+                </div>
               </div>
-              <div class="space-y-2">
-                <Label class="text-xs font-bold uppercase text-slate-500">Dossier</Label>
-                <select v-model="newFile.folderId" class="w-full h-10 px-3 rounded-md border border-slate-200 text-sm bg-white">
-                  <option :value="null">Aucun (racine)</option>
-                  <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
-                </select>
+
+              <!-- Auto-detected type info -->
+              <div v-if="uploadedFile" class="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/10">
+                <Shield class="w-4 h-4 text-primary flex-shrink-0" />
+                <p class="text-xs text-primary">
+                  Type détecté automatiquement : <span class="font-bold">{{ newFile.type }}</span> — Catégorie : <span class="font-bold">{{ newFile.category }}</span>
+                </p>
               </div>
             </div>
             <div class="flex justify-end gap-2">
-              <Button variant="outline" @click="showUploadFile = false">Annuler</Button>
-              <Button @click="uploadFile">Archiver</Button>
+              <Button variant="outline" @click="showUploadFile = false; removeSelectedFile()">Annuler</Button>
+              <Button @click="uploadFile" :disabled="!uploadedFile">
+                <Upload class="w-4 h-4 mr-2" />
+                Archiver
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

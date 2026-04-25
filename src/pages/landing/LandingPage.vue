@@ -49,6 +49,7 @@ const stats = [
           <a href="#features" class="text-sm font-medium hover:text-primary transition-colors">Fonctionnalités</a>
           <a href="#solutions" class="text-sm font-medium hover:text-primary transition-colors">Solutions</a>
           <a href="#pricing" class="text-sm font-medium hover:text-primary transition-colors">Tarifs</a>
+          <router-link to="/contact" class="text-sm font-medium hover:text-primary transition-colors">Contact</router-link>
         </nav>
         <div class="flex items-center gap-4">
           <Button variant="ghost">
@@ -216,6 +217,25 @@ const stats = [
       </section>
     </main>
 
+    <!-- CTA Contact -->
+    <section class="py-20 bg-muted/30">
+      <div class="container mx-auto px-4 text-center space-y-6">
+        <h2 class="text-2xl md:text-3xl font-bold tracking-tight">
+          Pas encore de compte ? Contactez-nous
+        </h2>
+        <p class="text-muted-foreground max-w-xl mx-auto">
+          Notre équipe est disponible pour répondre à vos questions, organiser une démonstration ou vous accompagner dans la mise en place de la plateforme.
+        </p>
+        <router-link
+          to="/contact"
+          class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-11 px-8 cursor-pointer"
+        >
+          Nous contacter
+          <ArrowRight class="w-4 h-4" />
+        </router-link>
+      </div>
+    </section>
+
     <!-- Footer -->
     <footer class="border-t py-12 bg-muted/30">
       <div class="container mx-auto px-4">
@@ -226,9 +246,12 @@ const stats = [
             </div>
             <span class="font-semibold text-sm">Registre Dynamique</span>
           </div>
-          <p class="text-sm text-muted-foreground">
-            &copy; {{ new Date().getFullYear() }} Registre Dynamique de Travail. Tous droits réservés.
-          </p>
+          <div class="flex items-center gap-6">
+            <router-link to="/contact" class="text-sm text-muted-foreground hover:text-primary transition-colors">Contact</router-link>
+            <p class="text-sm text-muted-foreground">
+              &copy; {{ new Date().getFullYear() }} Registre Dynamique de Travail. Tous droits réservés.
+            </p>
+          </div>
         </div>
       </div>
     </footer>
