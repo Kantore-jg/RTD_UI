@@ -29,8 +29,8 @@ const builderFeatures = [
 
 const stats = [
   { value: '99.9%', label: 'Disponibilité' },
-  { value: 'AES-256', label: 'Chiffrement' },
-  { value: '<200ms', label: 'Temps de réponse' },
+  { value: 'Archivage', label: 'stockage des données de votre entreprise' },
+  { value: 'Communication', label: 'communication avec vos collaborateurs' },
 ]
 </script>
 
@@ -73,18 +73,18 @@ const stats = [
               Nouveau : Constructeur de registres dynamiques
             </div>
             <h1 class="text-4xl md:text-6xl font-bold tracking-tight leading-tight">
-              Pilotez votre entreprise avec
-              <span class="text-primary"> intelligence</span>
+              Gerer bien vos entreprises avec
+              <span class="text-primary">Registre Dynamique,gestion dynamiques des taches et prograssions desprojets</span>
             </h1>
             <p class="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-              La plateforme tout-en-un pour gérer vos employés, suivre vos projets et optimiser vos processus métier. Simple, puissant, et conçu pour les équipes modernes.
+              La plateforme tout-en-un , suivre vos projets et optimiser vos processus métier. Simple, puissant, et conçu pour les équipes modernes.
             </p>
             <div class="flex flex-col sm:flex-row gap-4 justify-center">
               <router-link
                 to="/login"
                 class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-11 px-8 cursor-pointer"
               >
-                Commencer gratuitement
+                Commencer 
                 <ArrowRight class="w-4 h-4" />
               </router-link>
               <a
@@ -106,7 +106,8 @@ const stats = [
               Tout ce dont vous avez besoin
             </h2>
             <p class="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Des outils puissants pour chaque aspect de la gestion de votre entreprise.
+              Des outils puissants pour chaque aspect de la gestion de votre entreprise.  
+              vous pouvez aussi gerer les documents de vos entreprises et les communications avec vos collaborateurs.
             </p>
           </div>
           <div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
@@ -191,7 +192,7 @@ const stats = [
           <div class="text-center space-y-4 mb-16">
             <div class="inline-flex items-center gap-2 mx-auto">
               <Globe class="w-5 h-5" />
-              <span class="text-sm font-medium uppercase tracking-wider">Infrastructure mondiale</span>
+              <span class="text-sm font-medium uppercase tracking-wider">juste un peut d'abonnement par mois, le service est disponible partout dans le monde</span>
             </div>
             <h2 class="text-3xl md:text-4xl font-bold tracking-tight">
               Conçu pour la performance et la sécurité

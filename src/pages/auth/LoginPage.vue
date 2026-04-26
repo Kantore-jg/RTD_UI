@@ -86,7 +86,7 @@ async function handleLogin() {
               <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Zap class="w-4 h-4" />
               </div>
-              <span class="text-sm opacity-80">Temps de réponse inférieur à 100ms</span>
+              <span class="text-sm opacity-80">Temps de réponse rapide</span>
             </div>
           </div>
         </div>
@@ -96,6 +96,8 @@ async function handleLogin() {
         </p>
       </div>
     </div>
+    <!-- le panel - tarifs -->
+     
 
     <!-- Right Panel - Login Form -->
     <div class="flex-1 flex items-center justify-center p-8 bg-background">
