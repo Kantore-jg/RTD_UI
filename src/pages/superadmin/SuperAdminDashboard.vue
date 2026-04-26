@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   ShieldCheck, Building2, Users, BarChart3, LayoutGrid,
   ShieldAlert, Search, Filter, Plus, MoreHorizontal,
@@ -25,69 +25,16 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { toast } from 'vue-sonner'
+import { superAdminService } from '@/services/superadmin'
 
+const loading = ref(false)
 const activeTab = ref('companies')
 
-const companies = ref([
-  {
-    id: 1, name: 'Kantox International', domain: 'kantox.com', logo: 'KI',
-    owner: 'Jean Dupont', email: 'jean@kantox.com', phone: '+257 79 123 456',
-    address: 'Bujumbura, Avenue de la Paix', nif: '400012345',
-    plan: 'Enterprise', users: 128, revenue: '2 400 000 BIF',
-    monthlyFee: '500 000 BIF', status: 'active', color: 'bg-blue-500',
-    modules: ['employees', 'tasks', 'projects', 'finance', 'archives', 'communication', 'builder'],
-  },
-  {
-    id: 2, name: 'AfriTech Solutions', domain: 'afritech.io', logo: 'AT',
-    owner: 'Sarah Koné', email: 'sarah@afritech.io', phone: '+257 79 234 567',
-    address: 'Gitega, Rue Principale', nif: '',
-    plan: 'Business', users: 64, revenue: '1 100 000 BIF',
-    monthlyFee: '300 000 BIF', status: 'active', color: 'bg-emerald-500',
-    modules: ['employees', 'tasks', 'projects', 'finance'],
-  },
-  {
-    id: 3, name: 'LogiPort Douala', domain: 'logiport.cm', logo: 'LP',
-    owner: 'Marc Belibi', email: 'marc@logiport.cm', phone: '+257 79 345 678',
-    address: 'Ngozi, Centre Ville', nif: '400098765',
-    plan: 'Starter', users: 22, revenue: '350 000 BIF',
-    monthlyFee: '150 000 BIF', status: 'trial', color: 'bg-orange-500',
-    modules: ['employees', 'tasks'],
-  },
-  {
-    id: 4, name: 'MediCare Plus', domain: 'medicare.cm', logo: 'MC',
-    owner: 'Alice Mbarga', email: 'alice@medicare.cm', phone: '+257 79 456 789',
-    address: 'Bujumbura, Quartier Asiatique', nif: '',
-    plan: 'Business', users: 45, revenue: '890 000 BIF',
-    monthlyFee: '300 000 BIF', status: 'suspended', color: 'bg-violet-500',
-    modules: ['employees', 'tasks', 'projects', 'finance', 'archives'],
-  },
-])
-
-const payments = ref([
-  { id: 1, companyId: 1, company: 'Kantox International', date: '2026-04-20', amount: '500 000 BIF', receipt: 'recu_kantox_04.jpg', account: 'BANCOBU - 10045678', status: 'validated' },
-  { id: 2, companyId: 2, company: 'AfriTech Solutions', date: '2026-04-18', amount: '300 000 BIF', receipt: 'recu_afritech_04.jpg', account: 'ECOBANK - 20089012', status: 'pending' },
-  { id: 3, companyId: 3, company: 'LogiPort Douala', date: '2026-04-15', amount: '150 000 BIF', receipt: 'recu_logiport_04.jpg', account: 'BCB - 30056789', status: 'pending' },
-  { id: 4, companyId: 4, company: 'MediCare Plus', date: '2026-03-20', amount: '300 000 BIF', receipt: '', account: 'BANCOBU - 40012345', status: 'rejected' },
-])
-
-const paymentMethods = ref([
-  { id: 1, bankName: 'BANCOBU', accountNumber: '10045678901234', accountHolder: 'RDT SARL', type: 'BIF' },
-  { id: 2, bankName: 'ECOBANK', accountNumber: '20089012345678', accountHolder: 'RDT SARL', type: 'BIF' },
-  { id: 3, bankName: 'Binance', accountNumber: 'TRC20-abc123def456', accountHolder: 'RDT Platform', type: 'USDT' },
-])
-
-const contracts = ref([
-  { id: 1, companyId: 1, company: 'Kantox International', startDate: '2025-01-01', endDate: '2026-12-31', monthlyFee: '500 000 BIF', status: 'active' },
-  { id: 2, companyId: 2, company: 'AfriTech Solutions', startDate: '2025-06-01', endDate: '2026-05-31', monthlyFee: '300 000 BIF', status: 'active' },
-  { id: 3, companyId: 3, company: 'LogiPort Douala', startDate: '2026-03-01', endDate: '2026-06-01', monthlyFee: '150 000 BIF', status: 'trial' },
-  { id: 4, companyId: 4, company: 'MediCare Plus', startDate: '2025-09-01', endDate: '2026-08-31', monthlyFee: '300 000 BIF', status: 'suspended' },
-])
-
-const adminMessages = ref([
-  { id: 1, company: 'AfriTech Solutions', from: 'Sarah Koné', subject: 'Demande ajout module Archives', date: '2026-04-22', read: false },
-  { id: 2, company: 'LogiPort Douala', from: 'Marc Belibi', subject: 'Problème de facturation', date: '2026-04-20', read: false },
-  { id: 3, company: 'Kantox International', from: 'Jean Dupont', subject: 'Renouvellement contrat', date: '2026-04-18', read: true },
-])
+const companies = ref([])
+const payments = ref([])
+const paymentMethods = ref([])
+const adminMessages = ref([])
+const dashboardStats = ref(null)
 
 const searchTerm = ref('')
 const showAddCompany = ref(false)
@@ -116,6 +63,104 @@ const allModules = [
   { id: 'attendance', label: 'Présence' },
 ]
 
+async function fetchCompanies() {
+  try {
+    const { data } = await superAdminService.organizations()
+    const orgs = data.data || data
+    const colorPool = ['bg-blue-500', 'bg-emerald-500', 'bg-orange-500', 'bg-violet-500', 'bg-rose-500', 'bg-cyan-500']
+    companies.value = (Array.isArray(orgs) ? orgs : []).map((org, i) => ({
+      id: org.id,
+      name: org.name || '',
+      domain: org.domain || '',
+      logo: (org.name || '').split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase(),
+      owner: org.owner || org.admin_name || '',
+      email: org.email || '',
+      phone: org.phone || '',
+      address: org.address || '',
+      nif: org.nif || '',
+      plan: org.plan || 'Starter',
+      users: org.users_count ?? org.users ?? 0,
+      revenue: org.revenue || '0 BIF',
+      monthlyFee: org.monthly_fee || org.monthlyFee || '0 BIF',
+      status: org.status || 'active',
+      color: colorPool[i % colorPool.length],
+      modules: org.modules || [],
+    }))
+  } catch {
+    toast.error('Erreur lors du chargement des entreprises')
+  }
+}
+
+async function fetchPayments() {
+  try {
+    const { data } = await superAdminService.payments()
+    const raw = data.data || data || []
+    payments.value = (Array.isArray(raw) ? raw : []).map(p => ({
+      ...p,
+      company: p.organization?.name || p.company || '',
+      amount: p.montant ? Number(p.montant).toLocaleString('fr-FR') + ' BIF' : p.amount || '0 BIF',
+      status: p.statut || p.status || 'En attente',
+      account: p.payment_method
+        ? `${p.payment_method.bank_name} — ${p.payment_method.account_number}`
+        : p.account || '',
+    }))
+  } catch {
+    toast.error('Erreur lors du chargement des paiements')
+  }
+}
+
+function getReceiptUrl(receipt) {
+  if (!receipt) return null
+  if (receipt.startsWith('http')) return receipt
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+  return `${apiBase.replace('/api', '')}/storage/${receipt}`
+}
+
+async function fetchPaymentMethods() {
+  try {
+    const { data } = await superAdminService.paymentMethods()
+    paymentMethods.value = data.data || data || []
+  } catch {
+    toast.error('Erreur lors du chargement des moyens de paiement')
+  }
+}
+
+async function fetchAdminMessages() {
+  try {
+    const { data } = await superAdminService.adminMessages()
+    const raw = data.data || data || []
+    adminMessages.value = (Array.isArray(raw) ? raw : []).map(m => ({
+      ...m,
+      from: m.user?.name || m.from || 'Inconnu',
+      company: m.organization?.name || m.company || '',
+      date: m.created_at ? new Date(m.created_at).toLocaleDateString('fr-FR') : m.date || '',
+    }))
+  } catch {
+    toast.error('Erreur lors du chargement des messages')
+  }
+}
+
+async function fetchDashboard() {
+  try {
+    const { data } = await superAdminService.dashboard()
+    dashboardStats.value = data.data || data
+  } catch {
+    // stats will be computed from local data as fallback
+  }
+}
+
+onMounted(async () => {
+  loading.value = true
+  await Promise.all([
+    fetchDashboard(),
+    fetchCompanies(),
+    fetchPayments(),
+    fetchPaymentMethods(),
+    fetchAdminMessages(),
+  ])
+  loading.value = false
+})
+
 const filteredCompanies = computed(() => {
   const term = searchTerm.value.toLowerCase()
   if (!term) return companies.value
@@ -133,12 +178,20 @@ const paginatedCompanies = computed(() => {
 
 const totalPages = computed(() => Math.ceil(filteredCompanies.value.length / itemsPerPage))
 
-const globalStats = computed(() => [
-  { label: 'Tenants Actifs', value: String(companies.value.filter(c => c.status === 'active').length), icon: Building2, change: '+3', color: 'text-blue-500', bg: 'bg-blue-500/10' },
-  { label: 'Utilisateurs Totaux', value: String(companies.value.reduce((sum, c) => sum + c.users, 0)), icon: Users, change: '+156', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  { label: 'Revenus MRR', value: companies.value.reduce((sum, c) => sum + parseInt(c.monthlyFee.replace(/\D/g, '') || 0), 0).toLocaleString('fr-FR') + ' BIF', icon: BarChart3, change: '+18%', color: 'text-violet-500', bg: 'bg-violet-500/10' },
-  { label: 'Paiements en attente', value: String(payments.value.filter(p => p.status === 'pending').length), icon: Activity, change: 'À traiter', color: 'text-orange-500', bg: 'bg-orange-500/10' },
-])
+const globalStats = computed(() => {
+  const s = dashboardStats.value
+  const activeCount = s?.active_organizations ?? companies.value.filter(c => c.status === 'active').length
+  const totalUsers = s?.total_users ?? companies.value.reduce((sum, c) => sum + c.users, 0)
+  const revenue = s?.total_revenue ?? companies.value.reduce((sum, c) => sum + parseInt(String(c.monthlyFee).replace(/\D/g, '') || 0), 0)
+  const pendingCount = payments.value.filter(p => (p.statut || p.status) === 'En attente').length
+
+  return [
+    { label: 'Tenants Actifs', value: String(activeCount), icon: Building2, change: '+0', color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    { label: 'Utilisateurs Totaux', value: String(totalUsers), icon: Users, change: '+0', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    { label: 'Revenus MRR', value: Number(revenue).toLocaleString('fr-FR') + ' BIF', icon: BarChart3, change: '+0%', color: 'text-violet-500', bg: 'bg-violet-500/10' },
+    { label: 'Paiements en attente', value: String(pendingCount), icon: Activity, change: 'À traiter', color: 'text-orange-500', bg: 'bg-orange-500/10' },
+  ]
+})
 
 function statusBadge(status) {
   const map = {
@@ -151,6 +204,9 @@ function statusBadge(status) {
 
 function paymentStatusBadge(status) {
   const map = {
+    'Validé': { label: 'Validé', class: 'bg-emerald-100 text-emerald-700' },
+    'En attente': { label: 'En attente', class: 'bg-orange-100 text-orange-700' },
+    'Rejeté': { label: 'Rejeté', class: 'bg-red-100 text-red-700' },
     validated: { label: 'Validé', class: 'bg-emerald-100 text-emerald-700' },
     pending: { label: 'En attente', class: 'bg-orange-100 text-orange-700' },
     rejected: { label: 'Rejeté', class: 'bg-red-100 text-red-700' },
@@ -158,91 +214,130 @@ function paymentStatusBadge(status) {
   return map[status] ?? { label: status, class: 'bg-slate-100 text-slate-700' }
 }
 
-let nextCompanyId = 5
-
-function addCompany() {
+async function addCompany() {
   if (!newCompany.value.name || !newCompany.value.owner || !newCompany.value.email) {
     toast.error('Veuillez remplir les champs obligatoires')
     return
   }
-  const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-orange-500', 'bg-violet-500', 'bg-rose-500', 'bg-cyan-500']
-  companies.value.push({
-    id: nextCompanyId++,
-    name: newCompany.value.name,
-    owner: newCompany.value.owner,
-    email: newCompany.value.email,
-    phone: newCompany.value.phone,
-    address: newCompany.value.address,
-    nif: newCompany.value.nif,
-    domain: newCompany.value.email.split('@')[1] || '',
-    logo: newCompany.value.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase(),
-    plan: 'Starter',
-    users: 0,
-    revenue: '0 BIF',
-    monthlyFee: newCompany.value.monthlyFee || '150 000 BIF',
-    status: 'trial',
-    color: colors[Math.floor(Math.random() * colors.length)],
-    modules: ['employees', 'tasks'],
-  })
-  newCompany.value = { name: '', owner: '', email: '', phone: '', address: '', nif: '', monthlyFee: '' }
-  showAddCompany.value = false
-  toast.success('Entreprise créée avec succès')
-}
-
-function deleteCompany(id) {
-  companies.value = companies.value.filter(c => c.id !== id)
-  toast.success('Entreprise supprimée')
-}
-
-function toggleCompanyStatus(company) {
-  company.status = company.status === 'suspended' ? 'active' : 'suspended'
-  toast.success(`Entreprise ${company.status === 'active' ? 'activée' : 'suspendue'}`)
-}
-
-function viewCompanyDetail(company) {
-  selectedCompany.value = { ...company }
-  showCompanyDetail.value = true
-}
-
-function toggleModule(company, moduleId) {
-  const idx = company.modules.indexOf(moduleId)
-  if (idx >= 0) {
-    company.modules.splice(idx, 1)
-    toast.info(`Module retiré pour ${company.name}`)
-  } else {
-    company.modules.push(moduleId)
-    toast.info(`Module ajouté pour ${company.name}`)
+  try {
+    await superAdminService.createOrganization({
+      name: newCompany.value.name,
+      admin_name: newCompany.value.owner,
+      admin_email: newCompany.value.email,
+      email: newCompany.value.email,
+      phone: newCompany.value.phone,
+      address: newCompany.value.address,
+      nif: newCompany.value.nif,
+      monthly_fee: newCompany.value.monthlyFee,
+    })
+    newCompany.value = { name: '', owner: '', email: '', phone: '', address: '', nif: '', monthlyFee: '' }
+    showAddCompany.value = false
+    await fetchCompanies()
+    toast.success('Entreprise créée avec succès')
+  } catch (err) {
+    const msg = err.response?.data?.message || Object.values(err.response?.data?.errors || {}).flat()[0] || 'Erreur lors de la création de l\'entreprise'
+    toast.error(msg)
   }
 }
 
-function validatePayment(payment) {
-  payment.status = 'validated'
-  toast.success(`Paiement de ${payment.company} validé`)
+async function deleteCompany(id) {
+  try {
+    await superAdminService.deleteOrganization(id)
+    await fetchCompanies()
+    toast.success('Entreprise supprimée')
+  } catch {
+    toast.error('Erreur lors de la suppression')
+  }
 }
 
-function rejectPayment(payment) {
-  payment.status = 'rejected'
-  toast.error(`Paiement de ${payment.company} rejeté`)
+async function toggleCompanyStatus(company) {
+  try {
+    await superAdminService.toggleOrganizationStatus(company.id)
+    await fetchCompanies()
+    toast.success(`Statut de l'entreprise mis à jour`)
+  } catch {
+    toast.error('Erreur lors du changement de statut')
+  }
 }
 
-function addPaymentMethod() {
+function viewCompanyDetail(company) {
+  selectedCompany.value = company
+  showCompanyDetail.value = true
+}
+
+const liveSelectedCompany = computed(() => {
+  if (!selectedCompany.value) return null
+  return companies.value.find(c => c.id === selectedCompany.value.id) || selectedCompany.value
+})
+
+async function toggleModule(company, moduleId) {
+  try {
+    await superAdminService.toggleModule(company.id, { module: moduleId })
+    await fetchCompanies()
+    toast.info(`Module mis à jour pour ${company.name}`)
+  } catch {
+    toast.error('Erreur lors de la mise à jour du module')
+  }
+}
+
+async function validatePayment(payment) {
+  try {
+    await superAdminService.validatePayment(payment.id)
+    await fetchPayments()
+    toast.success(`Paiement de ${payment.company} validé`)
+  } catch {
+    toast.error('Erreur lors de la validation du paiement')
+  }
+}
+
+async function rejectPayment(payment) {
+  try {
+    await superAdminService.rejectPayment(payment.id)
+    await fetchPayments()
+    toast.error(`Paiement de ${payment.company} rejeté`)
+  } catch {
+    toast.error('Erreur lors du rejet du paiement')
+  }
+}
+
+async function addPaymentMethod() {
   if (!newPaymentMethod.value.bankName || !newPaymentMethod.value.accountNumber) {
     toast.error('Veuillez remplir tous les champs')
     return
   }
-  paymentMethods.value.push({ id: paymentMethods.value.length + 1, ...newPaymentMethod.value })
-  newPaymentMethod.value = { bankName: '', accountNumber: '', accountHolder: '', type: 'BIF' }
-  showAddPaymentMethod.value = false
-  toast.success('Moyen de paiement ajouté')
+  try {
+    await superAdminService.createPaymentMethod({
+      bank_name: newPaymentMethod.value.bankName,
+      account_number: newPaymentMethod.value.accountNumber,
+      account_holder: newPaymentMethod.value.accountHolder,
+      type: newPaymentMethod.value.type,
+    })
+    newPaymentMethod.value = { bankName: '', accountNumber: '', accountHolder: '', type: 'BIF' }
+    showAddPaymentMethod.value = false
+    await fetchPaymentMethods()
+    toast.success('Moyen de paiement ajouté')
+  } catch {
+    toast.error('Erreur lors de l\'ajout du moyen de paiement')
+  }
 }
 
-function deletePaymentMethod(id) {
-  paymentMethods.value = paymentMethods.value.filter(m => m.id !== id)
-  toast.success('Moyen de paiement supprimé')
+async function deletePaymentMethod(id) {
+  try {
+    await superAdminService.deletePaymentMethod(id)
+    await fetchPaymentMethods()
+    toast.success('Moyen de paiement supprimé')
+  } catch {
+    toast.error('Erreur lors de la suppression')
+  }
 }
 
-function markMessageRead(msg) {
-  msg.read = true
+async function markMessageRead(msg) {
+  try {
+    await superAdminService.markAdminMessageRead(msg.id)
+    await fetchAdminMessages()
+  } catch {
+    msg.read = true
+  }
 }
 </script>
 
@@ -302,9 +397,6 @@ function markMessageRead(msg) {
         </TabsTrigger>
         <TabsTrigger value="payments" class="font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg px-4 text-xs">
           <Wallet class="w-3.5 h-3.5 mr-1.5" />Paiements
-        </TabsTrigger>
-        <TabsTrigger value="contracts" class="font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg px-4 text-xs">
-          <FileText class="w-3.5 h-3.5 mr-1.5" />Contrats
         </TabsTrigger>
         <TabsTrigger value="paymentMethods" class="font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg px-4 text-xs">
           <CreditCard class="w-3.5 h-3.5 mr-1.5" />Moyens de paiement
@@ -524,11 +616,16 @@ function markMessageRead(msg) {
                   <TableCell class="font-semibold text-sm">{{ payment.company }}</TableCell>
                   <TableCell class="text-sm text-slate-600">{{ payment.date }}</TableCell>
                   <TableCell class="text-sm font-bold">{{ payment.amount }}</TableCell>
-                  <TableCell class="text-xs text-slate-500">{{ payment.account }}</TableCell>
+                  <TableCell class="text-xs text-slate-600 font-medium">{{ payment.account || '—' }}</TableCell>
                   <TableCell>
-                    <Badge v-if="payment.receipt" variant="outline" class="text-[10px]">
-                      <FileText class="w-3 h-3 mr-1" />{{ payment.receipt }}
-                    </Badge>
+                    <a
+                      v-if="payment.receipt"
+                      :href="getReceiptUrl(payment.receipt)"
+                      target="_blank"
+                      class="flex items-center gap-1 text-primary hover:underline text-xs font-medium"
+                    >
+                      <FileText class="w-3 h-3" />Voir le reçu
+                    </a>
                     <span v-else class="text-xs text-slate-400">Aucun</span>
                   </TableCell>
                   <TableCell>
@@ -537,7 +634,7 @@ function markMessageRead(msg) {
                     </Badge>
                   </TableCell>
                   <TableCell class="text-right">
-                    <div v-if="payment.status === 'pending'" class="flex items-center justify-end gap-1">
+                    <div v-if="payment.status === 'En attente' || payment.status === 'pending'" class="flex items-center justify-end gap-1">
                       <Button size="sm" class="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" @click="validatePayment(payment)">
                         <CheckCircle2 class="w-3.5 h-3.5 mr-1" />Valider
                       </Button>
@@ -546,42 +643,6 @@ function markMessageRead(msg) {
                       </Button>
                     </div>
                     <span v-else class="text-xs text-slate-400">—</span>
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </TabsContent>
-
-      <!-- === CONTRACTS TAB === -->
-      <TabsContent value="contracts">
-        <Card class="border border-slate-200 bg-white rounded-xl shadow-sm">
-          <CardHeader>
-            <CardTitle class="font-bold text-lg">Contrats des Entreprises</CardTitle>
-            <CardDescription>Historique des contrats et collaborations.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Entreprise</TableHead>
-                  <TableHead class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Début</TableHead>
-                  <TableHead class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Fin</TableHead>
-                  <TableHead class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Montant/mois</TableHead>
-                  <TableHead class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Statut</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow v-for="contract in contracts" :key="contract.id">
-                  <TableCell class="font-semibold text-sm">{{ contract.company }}</TableCell>
-                  <TableCell class="text-sm text-slate-600">{{ contract.startDate }}</TableCell>
-                  <TableCell class="text-sm text-slate-600">{{ contract.endDate }}</TableCell>
-                  <TableCell class="text-sm font-bold">{{ contract.monthlyFee }}</TableCell>
-                  <TableCell>
-                    <Badge :class="cn('text-[10px] font-bold uppercase tracking-wider', statusBadge(contract.status).class)">
-                      {{ statusBadge(contract.status).label }}
-                    </Badge>
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -652,11 +713,11 @@ function markMessageRead(msg) {
                     </Button>
                   </div>
                   <div>
-                    <p class="font-bold text-sm">{{ method.bankName }}</p>
-                    <p class="text-xs text-slate-500 mt-1">{{ method.accountNumber }}</p>
+                    <p class="font-bold text-sm">{{ method.bank_name || method.bankName }}</p>
+                    <p class="text-xs text-slate-500 mt-1">{{ method.account_number || method.accountNumber }}</p>
                   </div>
                   <div class="flex justify-between items-center pt-2 border-t">
-                    <span class="text-xs text-slate-500">{{ method.accountHolder }}</span>
+                    <span class="text-xs text-slate-500">{{ method.account_holder || method.accountHolder }}</span>
                     <Badge variant="outline" class="text-[10px] font-bold">{{ method.type }}</Badge>
                   </div>
                 </CardContent>
@@ -705,35 +766,43 @@ function markMessageRead(msg) {
     <Dialog v-model:open="showCompanyDetail">
       <DialogContent class="sm:max-w-[550px]">
         <DialogHeader>
-          <DialogTitle>{{ selectedCompany?.name }}</DialogTitle>
+          <DialogTitle>{{ liveSelectedCompany?.name }}</DialogTitle>
           <DialogDescription>Détails et gestion des modules de l'entreprise.</DialogDescription>
         </DialogHeader>
-        <div v-if="selectedCompany" class="space-y-4 py-4">
+        <div v-if="liveSelectedCompany" class="space-y-4 py-4">
           <div class="grid grid-cols-2 gap-4 text-sm">
             <div class="flex items-center gap-2">
               <Users class="w-4 h-4 text-slate-400" />
-              <span class="text-slate-600">DG: <strong>{{ selectedCompany.owner }}</strong></span>
+              <span class="text-slate-600">DG: <strong>{{ liveSelectedCompany.owner }}</strong></span>
             </div>
             <div class="flex items-center gap-2">
               <Mail class="w-4 h-4 text-slate-400" />
-              <span class="text-slate-600">{{ selectedCompany.email }}</span>
+              <span class="text-slate-600">{{ liveSelectedCompany.email }}</span>
             </div>
             <div class="flex items-center gap-2">
               <Phone class="w-4 h-4 text-slate-400" />
-              <span class="text-slate-600">{{ selectedCompany.phone }}</span>
+              <span class="text-slate-600">{{ liveSelectedCompany.phone }}</span>
             </div>
             <div class="flex items-center gap-2">
               <MapPin class="w-4 h-4 text-slate-400" />
-              <span class="text-slate-600">{{ selectedCompany.address }}</span>
+              <span class="text-slate-600">{{ liveSelectedCompany.address }}</span>
             </div>
-            <div v-if="selectedCompany.nif" class="flex items-center gap-2">
+            <div v-if="liveSelectedCompany.nif" class="flex items-center gap-2">
               <Hash class="w-4 h-4 text-slate-400" />
-              <span class="text-slate-600">NIF: {{ selectedCompany.nif }}</span>
+              <span class="text-slate-600">NIF: {{ liveSelectedCompany.nif }}</span>
             </div>
           </div>
 
+          <div class="flex items-center gap-3">
+            <Badge :class="cn('text-[10px] font-bold uppercase tracking-wider', statusBadge(liveSelectedCompany.status).class)">
+              {{ statusBadge(liveSelectedCompany.status).label }}
+            </Badge>
+            <span class="text-xs text-slate-400">{{ liveSelectedCompany.users }} utilisateurs</span>
+            <span class="text-xs text-slate-400">{{ liveSelectedCompany.monthlyFee }}/mois</span>
+          </div>
+
           <div class="pt-4 border-t">
-            <p class="text-xs font-bold uppercase text-slate-500 tracking-wider mb-3">Modules Actifs</p>
+            <p class="text-xs font-bold uppercase text-slate-500 tracking-wider mb-3">Modules Actifs ({{ liveSelectedCompany.modules.length }}/{{ allModules.length }})</p>
             <div class="grid grid-cols-2 gap-2">
               <label
                 v-for="mod in allModules" :key="mod.id"
@@ -741,8 +810,8 @@ function markMessageRead(msg) {
               >
                 <input
                   type="checkbox"
-                  :checked="companies.find(c => c.id === selectedCompany.id)?.modules.includes(mod.id)"
-                  @change="toggleModule(companies.find(c => c.id === selectedCompany.id), mod.id)"
+                  :checked="liveSelectedCompany.modules.includes(mod.id)"
+                  @change="toggleModule(liveSelectedCompany, mod.id)"
                   class="rounded"
                 />
                 <span class="text-sm font-medium">{{ mod.label }}</span>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   Settings, Building2, ShieldCheck, Palette, BellRing, Globe,
@@ -21,11 +21,14 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { toast } from 'vue-sonner'
+import { settingsService, profileService } from '@/services/profile'
+import { adminMessageService } from '@/services/contact'
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const { user } = storeToRefs(authStore)
 
+const loading = ref(false)
 const activeSection = ref('organisation')
 
 const navItems = [
@@ -37,11 +40,11 @@ const navItems = [
 ]
 
 const orgForm = ref({
-  name: 'Kantox International',
-  domain: 'kantox.com',
-  address: 'Bujumbura, Avenue de la Paix',
-  phone: '+257 79 123 456',
-  email: 'contact@kantox.com',
+  name: '',
+  domain: '',
+  address: '',
+  phone: '',
+  email: '',
   companyEmail: '',
   companyEmailPassword: '',
 })
@@ -49,7 +52,29 @@ const orgForm = ref({
 const companyLogo = ref(null)
 const logoPreview = ref(null)
 
-function handleLogoUpload(event) {
+onMounted(async () => {
+  loading.value = true
+  try {
+    const { data } = await settingsService.getOrg()
+    const org = data.data || data
+    orgForm.value = {
+      name: org.name || '',
+      domain: org.domain || '',
+      address: org.address || '',
+      phone: org.phone || '',
+      email: org.email || '',
+      companyEmail: org.company_email || org.companyEmail || '',
+      companyEmailPassword: '',
+    }
+    if (org.logo) logoPreview.value = org.logo
+  } catch {
+    toast.error('Impossible de charger les paramètres')
+  } finally {
+    loading.value = false
+  }
+})
+
+async function handleLogoUpload(event) {
   const file = event.target.files?.[0]
   if (!file) return
   if (!file.type.startsWith('image/')) {
@@ -61,18 +86,26 @@ function handleLogoUpload(event) {
     return
   }
   companyLogo.value = file
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    logoPreview.value = e.target.result
+  const formData = new FormData()
+  formData.append('logo', file)
+  try {
+    const { data } = await settingsService.updateLogo(formData)
+    logoPreview.value = data.logo || data.data?.logo
+    toast.success('Logo mis à jour')
+  } catch {
+    toast.error('Erreur lors de l\'upload du logo')
   }
-  reader.readAsDataURL(file)
-  toast.success('Logo mis à jour')
 }
 
-function removeLogo() {
-  companyLogo.value = null
-  logoPreview.value = null
-  toast.info('Logo supprimé')
+async function removeLogo() {
+  try {
+    await settingsService.removeLogo()
+    companyLogo.value = null
+    logoPreview.value = null
+    toast.info('Logo supprimé')
+  } catch {
+    toast.error('Erreur lors de la suppression du logo')
+  }
 }
 
 const credentialsForm = ref({
@@ -81,7 +114,7 @@ const credentialsForm = ref({
   showCurrentPasswordForEmail: false,
 })
 
-function updateCredentials() {
+async function updateCredentials() {
   if (!credentialsForm.value.newEmail) {
     toast.error('Veuillez entrer le nouvel email')
     return
@@ -90,12 +123,18 @@ function updateCredentials() {
     toast.error('Veuillez entrer votre mot de passe actuel')
     return
   }
-  authStore.login({
-    ...user.value,
-    email: credentialsForm.value.newEmail,
-  })
-  credentialsForm.value = { newEmail: '', currentPasswordForEmail: '', showCurrentPasswordForEmail: false }
-  toast.success('Identifiants mis à jour avec succès')
+  try {
+    await settingsService.updateCredentials({
+      email: credentialsForm.value.newEmail,
+      current_password: credentialsForm.value.currentPasswordForEmail,
+    })
+    authStore.setUser({ ...user.value, email: credentialsForm.value.newEmail })
+    credentialsForm.value = { newEmail: '', currentPasswordForEmail: '', showCurrentPasswordForEmail: false }
+    toast.success('Identifiants mis à jour avec succès')
+  } catch (err) {
+    const msg = err.response?.data?.message || Object.values(err.response?.data?.errors || {}).flat()[0] || 'Erreur lors de la mise à jour des identifiants'
+    toast.error(msg)
+  }
 }
 
 const securityForm = ref({
@@ -133,19 +172,41 @@ const colors = [
   { name: 'Slate', value: 'bg-slate-800', ring: 'ring-slate-400' },
 ]
 
-function saveOrg() {
-  toast.success('Informations de l\'organisation sauvegardées')
+async function saveOrg() {
+  loading.value = true
+  try {
+    await settingsService.updateOrg({
+      name: orgForm.value.name,
+      domain: orgForm.value.domain,
+      address: orgForm.value.address,
+      phone: orgForm.value.phone,
+      email: orgForm.value.email,
+      company_email: orgForm.value.companyEmail,
+    })
+    toast.success('Informations de l\'organisation sauvegardées')
+  } catch {
+    toast.error('Erreur lors de la sauvegarde')
+  } finally {
+    loading.value = false
+  }
 }
 
-function saveEmail() {
+async function saveEmail() {
   if (!orgForm.value.companyEmail) {
     toast.error('Entrez l\'adresse email de l\'entreprise')
     return
   }
-  toast.success('Email entreprise configuré')
+  try {
+    await settingsService.updateOrg({
+      company_email: orgForm.value.companyEmail,
+    })
+    toast.success('Email entreprise configuré')
+  } catch {
+    toast.error('Erreur lors de la configuration de l\'email')
+  }
 }
 
-function changePassword() {
+async function changePassword() {
   if (!securityForm.value.currentPassword || !securityForm.value.newPassword) {
     toast.error('Veuillez remplir tous les champs')
     return
@@ -154,21 +215,48 @@ function changePassword() {
     toast.error('Les mots de passe ne correspondent pas')
     return
   }
-  securityForm.value = { currentPassword: '', newPassword: '', confirmPassword: '', twoFactor: securityForm.value.twoFactor, sessionTimeout: securityForm.value.sessionTimeout }
-  toast.success('Mot de passe modifié avec succès')
+  try {
+    await profileService.changePassword({
+      current_password: securityForm.value.currentPassword,
+      password: securityForm.value.newPassword,
+      password_confirmation: securityForm.value.confirmPassword,
+    })
+    securityForm.value = {
+      currentPassword: '', newPassword: '', confirmPassword: '',
+      twoFactor: securityForm.value.twoFactor, sessionTimeout: securityForm.value.sessionTimeout,
+      showCurrent: false, showNew: false, showConfirm: false,
+    }
+    toast.success('Mot de passe modifié avec succès')
+  } catch (err) {
+    const msg = err.response?.data?.message || Object.values(err.response?.data?.errors || {}).flat()[0] || 'Erreur lors du changement de mot de passe'
+    toast.error(msg)
+  }
 }
 
-function saveNotifications() {
-  toast.success('Préférences de notification sauvegardées')
+async function saveNotifications() {
+  try {
+    await settingsService.updateNotifications(notificationSettings.value)
+    toast.success('Préférences de notification sauvegardées')
+  } catch {
+    toast.error('Erreur lors de la sauvegarde des notifications')
+  }
 }
 
-function sendContactMessage() {
+async function sendContactMessage() {
   if (!contactForm.value.subject || !contactForm.value.message) {
     toast.error('Veuillez remplir le sujet et le message')
     return
   }
-  toast.success('Message envoyé à l\'administration. Vous recevrez une réponse par email.')
-  contactForm.value = { subject: '', message: '' }
+  try {
+    await adminMessageService.send({
+      subject: contactForm.value.subject,
+      message: contactForm.value.message,
+    })
+    toast.success('Message envoyé à l\'administration. Vous recevrez une réponse par email.')
+    contactForm.value = { subject: '', message: '' }
+  } catch {
+    toast.error('Erreur lors de l\'envoi du message')
+  }
 }
 
 function selectAccent(index) {
@@ -209,7 +297,7 @@ function handleLogout() {
               </AvatarFallback>
             </Avatar>
             <h3 class="font-bold text-slate-900 mt-3">{{ user?.name ?? 'Utilisateur' }}</h3>
-            <p class="text-xs text-slate-500 font-medium">{{ user?.email ?? 'email@example.com' }}</p>
+            <p class="text-xs text-slate-500 font-medium">{{ user?.email ?? '' }}</p>
             <div class="flex gap-2 mt-4 w-full">
               <Button variant="outline" size="sm" class="flex-1 text-xs font-bold" @click="activeSection = 'organisation'">
                 <User class="w-3.5 h-3.5 mr-1" />

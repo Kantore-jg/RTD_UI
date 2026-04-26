@@ -1,77 +1,55 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { Zap, ArrowRight, Lock, Mail, Eye, EyeOff } from 'lucide-vue-next'
+import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { Zap, ArrowRight, Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card'
-
+import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth'
+import { toast } from 'vue-sonner'
 
 const email = ref('')
 const password = ref('')
 const isLoading = ref(false)
-const loginRole = ref('')
 const showPassword = ref(false)
+const errorMessage = ref('')
 
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
-const DEMO_ACCOUNTS = {
-  admin: {
-    id: '1',
-    email: 'admin@company.com',
-    name: 'Jean Dupont',
-    role: 'ORG_ADMIN',
-    employeeId: 'JD',
-    organizationId: 'org_1',
-  },
-  employee: {
-    id: '2',
-    email: 'sarah@company.com',
-    name: 'Sarah Lawson',
-    role: 'EMPLOYEE',
-    employeeId: 'SL',
-    organizationId: 'org_1',
-  },
-  superadmin: {
-    id: '0',
-    email: 'superadmin@rdt-platform.com',
-    name: 'Super Admin',
-    role: 'SUPER_ADMIN',
-    employeeId: null,
-    organizationId: null,
-  },
-}
+onMounted(() => {
+  if (route.query.suspended === '1') {
+    errorMessage.value = 'Votre organisation a été suspendue. Veuillez contacter l\'administration.'
+  }
+})
 
-function handleLogin() {
+async function handleLogin() {
+  errorMessage.value = ''
+
+  if (!email.value || !password.value) {
+    errorMessage.value = 'Veuillez remplir tous les champs.'
+    return
+  }
+
   isLoading.value = true
-  loginRole.value = ''
 
-  setTimeout(() => {
-    authStore.login({
-      ...DEMO_ACCOUNTS.admin,
-      email: email.value || DEMO_ACCOUNTS.admin.email,
-      createdAt: new Date().toISOString(),
-    })
+  try {
+    const data = await authStore.login(email.value, password.value)
+    toast.success(`Bienvenue, ${data.user.name} !`)
+
+    if (data.user.role === 'SUPER_ADMIN') {
+      router.push('/super-admin')
+    } else {
+      router.push('/dashboard')
+    }
+  } catch (err) {
+    const msg = err.response?.data?.message || 'Identifiants incorrects.'
+    errorMessage.value = msg
+  } finally {
     isLoading.value = false
-    router.push('/dashboard')
-  }, 1500)
-}
-
-function handleDemoLogin(role) {
-  isLoading.value = true
-  loginRole.value = role
-
-  setTimeout(() => {
-    authStore.login({
-      ...DEMO_ACCOUNTS[role],
-      createdAt: new Date().toISOString(),
-    })
-    isLoading.value = false
-    router.push(role === 'superadmin' ? '/super-admin' : '/dashboard')
-  }, 1000)
+  }
 }
 </script>
 
@@ -122,7 +100,6 @@ function handleDemoLogin(role) {
     <!-- Right Panel - Login Form -->
     <div class="flex-1 flex items-center justify-center p-8 bg-background">
       <div class="w-full max-w-md space-y-8">
-        <!-- Mobile Logo -->
         <div class="lg:hidden flex items-center gap-2 justify-center mb-4">
           <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
             <Zap class="text-white w-5 h-5" />
@@ -138,6 +115,11 @@ function handleDemoLogin(role) {
         <Card>
           <CardContent class="pt-6">
             <form @submit.prevent="handleLogin" class="space-y-4">
+              <div v-if="errorMessage" class="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                <AlertCircle class="w-4 h-4 flex-shrink-0" />
+                {{ errorMessage }}
+              </div>
+
               <div class="space-y-2">
                 <Label for="email">Adresse e-mail</Label>
                 <div class="relative">
@@ -149,14 +131,13 @@ function handleDemoLogin(role) {
                     v-model="email"
                     class="pl-10"
                     :disabled="isLoading"
+                    @keydown.enter="handleLogin"
                   />
                 </div>
               </div>
 
               <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                  <Label for="password">Mot de passe</Label>
-                </div>
+                <Label for="password">Mot de passe</Label>
                 <div class="relative">
                   <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -205,37 +186,11 @@ function handleDemoLogin(role) {
               </Button>
             </form>
           </CardContent>
-<!-- 
-          <CardFooter class="flex flex-col space-y-4">
-            <div class="relative w-full">
-              <div class="absolute inset-0 flex items-center">
-                <span class="w-full border-t" />
-              </div>
-              <div class="relative flex justify-center text-xs uppercase">
-                <span class="bg-background px-2 text-muted-foreground">Accès démo rapide</span>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-3 gap-3 w-full">
-              <Button variant="outline" :disabled="isLoading" @click="handleDemoLogin('superadmin')" class="border-2 hover:border-red-500 hover:bg-red-500/5">
-                <Zap class="w-4 h-4 mr-2" />
-                Super Admin
-              </Button>
-              <Button variant="outline" :disabled="isLoading" @click="handleDemoLogin('admin')" class="border-2 hover:border-primary hover:bg-primary/5">
-                <Lock class="w-4 h-4 mr-2" />
-                Admin
-              </Button>
-              <Button variant="outline" :disabled="isLoading" @click="handleDemoLogin('employee')" class="border-2 hover:border-emerald-500 hover:bg-emerald-500/5">
-                <Mail class="w-4 h-4 mr-2" />
-                Employé
-              </Button>
-            </div>
-          </CardFooter> -->
         </Card>
 
         <p class="text-center text-sm text-muted-foreground">
           Besoin d'aide ?
-          <a href="/contact" class="text-primary hover:underline font-medium">Contacter le support</a>
+          <router-link to="/contact" class="text-primary hover:underline font-medium">Contacter le support</router-link>
         </p>
       </div>
     </div>

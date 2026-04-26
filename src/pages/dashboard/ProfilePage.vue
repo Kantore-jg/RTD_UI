@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   User, Mail, Briefcase, Calendar, Shield, Camera,
   Phone, MapPin, Building, Clock, Eye, EyeOff, Key,
@@ -17,21 +17,23 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { toast } from 'vue-sonner'
+import { profileService } from '@/services/profile'
 
 const authStore = useAuthStore()
 const { user } = storeToRefs(authStore)
 
+const loading = ref(false)
 const isEditing = ref(false)
 const showPasswordDialog = ref(false)
 const avatarPreview = ref(null)
 
 const profile = ref({
-  phone: '+225 07 00 00 00',
-  address: 'Abidjan, Côte d\'Ivoire',
-  department: 'Développement',
-  position: 'Développeur Frontend',
-  joinDate: '2025-01-15',
-  bio: 'Passionné par le développement web et les nouvelles technologies.',
+  phone: '',
+  address: '',
+  department: '',
+  position: '',
+  joinDate: '',
+  bio: '',
 })
 
 const editForm = ref({ ...profile.value })
@@ -45,22 +47,69 @@ const passwordForm = ref({
   showConfirm: false,
 })
 
+onMounted(async () => {
+  loading.value = true
+  try {
+    const { data } = await profileService.get()
+    const u = data.user || data.data || data
+    const emp = u.employee || {}
+    profile.value = {
+      phone: u.phone || emp.phone || '',
+      address: emp.address || '',
+      department: emp.department || '',
+      position: emp.role || '',
+      joinDate: emp.joined_at || '',
+      bio: '',
+    }
+    authStore.setUser({ ...user.value, ...u })
+  } catch {
+    toast.error('Impossible de charger le profil')
+  } finally {
+    loading.value = false
+  }
+})
+
 function startEditing() {
   editForm.value = { ...profile.value }
   isEditing.value = true
 }
 
-function saveProfile() {
-  profile.value = { ...editForm.value }
-  isEditing.value = false
-  toast.success('Profil mis à jour avec succès')
+async function saveProfile() {
+  loading.value = true
+  try {
+    await profileService.update({
+      phone: editForm.value.phone,
+      address: editForm.value.address,
+      department: editForm.value.department,
+      position: editForm.value.position,
+      bio: editForm.value.bio,
+    })
+    const { data } = await profileService.get()
+    const u = data.user || data.data || data
+    const emp = u.employee || {}
+    profile.value = {
+      phone: u.phone || emp.phone || '',
+      address: emp.address || '',
+      department: emp.department || '',
+      position: emp.role || '',
+      joinDate: emp.joined_at || '',
+      bio: '',
+    }
+    authStore.setUser({ ...user.value, ...u })
+    isEditing.value = false
+    toast.success('Profil mis à jour avec succès')
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la mise à jour du profil')
+  } finally {
+    loading.value = false
+  }
 }
 
 function cancelEditing() {
   isEditing.value = false
 }
 
-function handleAvatarUpload(event) {
+async function handleAvatarUpload(event) {
   const file = event.target.files?.[0]
   if (!file) return
   if (!file.type.startsWith('image/')) {
@@ -71,19 +120,28 @@ function handleAvatarUpload(event) {
     toast.error('La taille maximale est de 2 Mo')
     return
   }
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    avatarPreview.value = e.target.result
-    authStore.login({ ...user.value, avatar: e.target.result })
+  const formData = new FormData()
+  formData.append('avatar', file)
+  try {
+    const { data } = await profileService.updateAvatar(formData)
+    const avatarUrl = data.avatar || data.data?.avatar || data.user?.avatar
+    avatarPreview.value = avatarUrl
+    authStore.setUser({ ...user.value, avatar: avatarUrl })
+    toast.success('Photo de profil mise à jour')
+  } catch {
+    toast.error('Erreur lors de l\'upload de la photo')
   }
-  reader.readAsDataURL(file)
-  toast.success('Photo de profil mise à jour')
 }
 
-function removeAvatar() {
-  avatarPreview.value = null
-  authStore.login({ ...user.value, avatar: null })
-  toast.info('Photo de profil supprimée')
+async function removeAvatar() {
+  try {
+    await profileService.removeAvatar()
+    avatarPreview.value = null
+    authStore.setUser({ ...user.value, avatar: null })
+    toast.info('Photo de profil supprimée')
+  } catch {
+    toast.error('Erreur lors de la suppression de la photo')
+  }
 }
 
 function openPasswordDialog() {
@@ -91,7 +149,7 @@ function openPasswordDialog() {
   showPasswordDialog.value = true
 }
 
-function changePassword() {
+async function changePassword() {
   if (!passwordForm.value.current) {
     toast.error('Entrez votre mot de passe actuel')
     return
@@ -100,17 +158,27 @@ function changePassword() {
     toast.error('Entrez le nouveau mot de passe')
     return
   }
-  if (passwordForm.value.newPass.length < 6) {
-    toast.error('Le mot de passe doit contenir au moins 6 caractères')
+  if (passwordForm.value.newPass.length < 8) {
+    toast.error('Le mot de passe doit contenir au moins 8 caractères')
     return
   }
   if (passwordForm.value.newPass !== passwordForm.value.confirm) {
     toast.error('Les mots de passe ne correspondent pas')
     return
   }
-  showPasswordDialog.value = false
-  passwordForm.value = { current: '', newPass: '', confirm: '', showCurrent: false, showNew: false, showConfirm: false }
-  toast.success('Mot de passe modifié avec succès')
+  try {
+    await profileService.changePassword({
+      current_password: passwordForm.value.current,
+      password: passwordForm.value.newPass,
+      password_confirmation: passwordForm.value.confirm,
+    })
+    showPasswordDialog.value = false
+    passwordForm.value = { current: '', newPass: '', confirm: '', showCurrent: false, showNew: false, showConfirm: false }
+    toast.success('Mot de passe modifié avec succès')
+  } catch (err) {
+    const msg = err.response?.data?.message || Object.values(err.response?.data?.errors || {}).flat()[0] || 'Erreur lors du changement de mot de passe'
+    toast.error(msg)
+  }
 }
 
 const initials = computed(() => {

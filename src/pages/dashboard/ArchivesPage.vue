@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   Archive, Search, Filter, FileText, FileDown, Folder,
   MoreVertical, Clock, Shield, Plus, ArrowRight, HardDrive,
@@ -25,33 +25,15 @@ import { cn } from '@/lib/utils'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
+import { folderService, fileService } from '@/services/archives'
 
 const authStore = useAuthStore()
 const { isAdmin, isEmployee } = storeToRefs(authStore)
 
-const folders = ref([
-  { id: 1, name: 'Contrats RH', filesCount: 12, createdAt: '2026-01-15', createdBy: 'Alice Mensah' },
-  { id: 2, name: 'Factures IT', filesCount: 8, createdAt: '2026-02-10', createdBy: 'Marc Kouassi' },
-  { id: 3, name: 'Rapports RH', filesCount: 15, createdAt: '2025-11-20', createdBy: 'Sarah Lawson' },
-  { id: 4, name: 'Documents Légaux', filesCount: 6, createdAt: '2025-08-05', createdBy: 'Jean Dupont' },
-])
-
-const files = ref([
-  { id: '1', name: 'Contrat_Sarah_Lawson.pdf', type: 'PDF', category: 'RH', size: '1.2 MB', date: '2026-01-15', owner: 'RH Dept', folderId: 1, accessLog: [
-    { user: 'Alice Mensah', action: 'Consulté', date: '2026-04-20 14:30' },
-    { user: 'Jean Dupont', action: 'Téléchargé', date: '2026-04-18 09:15' },
-  ]},
-  { id: '2', name: 'Paiement_Mars_2026.xlsx', type: 'XLSX', category: 'Finance', size: '850 KB', date: '2026-04-05', owner: 'Finance Dept', folderId: 2, accessLog: [
-    { user: 'Marc Kouassi', action: 'Modifié', date: '2026-04-10 16:45' },
-  ]},
-  { id: '3', name: 'Plan_Expansion_Sud.pdf', type: 'PDF', category: 'Stratégie', size: '5.4 MB', date: '2026-03-20', owner: 'Direction', folderId: null, accessLog: [] },
-  { id: '4', name: 'Facture_AWS_Avril.pdf', type: 'PDF', category: 'Infrastructure', size: '210 KB', date: '2026-04-18', owner: 'IT Dept', folderId: 2, accessLog: [
-    { user: 'Paul Atreides', action: 'Consulté', date: '2026-04-19 10:00' },
-    { user: 'Sarah Lawson', action: 'Consulté', date: '2026-04-18 17:30' },
-    { user: 'Marc Kouassi', action: 'Uploadé', date: '2026-04-18 09:00' },
-  ]},
-  { id: '5', name: 'Charte_Ethique_V2.docx', type: 'DOCX', category: 'Admin', size: '420 KB', date: '2025-11-12', owner: 'Legal Dept', folderId: 4, accessLog: [] },
-])
+const folders = ref([])
+const files = ref([])
+const loading = ref(false)
+const loadingFiles = ref(false)
 
 const searchTerm = ref('')
 const currentFolderId = ref(null)
@@ -91,6 +73,7 @@ const extensionToCategory = {
 }
 
 function formatFileSize(bytes) {
+  if (typeof bytes === 'string') return bytes
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -137,6 +120,55 @@ function triggerFileInput() {
   fileInputRef.value?.click()
 }
 
+function normalizeFile(f) {
+  return {
+    id: f.id,
+    name: f.original_name || f.name,
+    type: (f.type || detectFileType(f.original_name || f.name)).toUpperCase(),
+    category: f.category || 'Général',
+    size: formatFileSize(f.size),
+    date: f.created_at ? f.created_at.split('T')[0] : '',
+    owner: f.uploaded_by?.name || 'Inconnu',
+    folderId: f.folder_id,
+    accessLog: f.access_logs || [],
+    _rawSize: typeof f.size === 'number' ? f.size : 0,
+  }
+}
+
+async function fetchFolders() {
+  loading.value = true
+  try {
+    const { data } = await folderService.list()
+    const raw = data.data ?? data
+    folders.value = raw.map(f => ({
+      id: f.id,
+      name: f.name,
+      filesCount: f.files_count ?? 0,
+      createdAt: f.created_at ? f.created_at.split('T')[0] : '',
+      createdBy: f.creator?.name || 'Inconnu',
+    }))
+  } catch {
+    toast.error('Erreur lors du chargement des dossiers')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchFiles() {
+  loadingFiles.value = true
+  try {
+    const params = {}
+    if (currentFolderId.value !== null) params.folder_id = currentFolderId.value
+    const { data } = await fileService.list(params)
+    const raw = data.data ?? data
+    files.value = raw.map(normalizeFile)
+  } catch {
+    toast.error('Erreur lors du chargement des fichiers')
+  } finally {
+    loadingFiles.value = false
+  }
+}
+
 const filteredFiles = computed(() => {
   let list = files.value
   if (currentFolderId.value !== null) {
@@ -154,13 +186,8 @@ const currentFolder = computed(() =>
 )
 
 const storageUsed = computed(() => {
-  const totalKB = files.value.reduce((sum, f) => {
-    const sizeStr = f.size
-    if (sizeStr.includes('MB')) return sum + parseFloat(sizeStr) * 1024
-    if (sizeStr.includes('KB')) return sum + parseFloat(sizeStr)
-    return sum
-  }, 0)
-  return (totalKB / 1024 / 1024).toFixed(1)
+  const totalBytes = files.value.reduce((sum, f) => sum + (f._rawSize || 0), 0)
+  return (totalBytes / (1024 * 1024 * 1024)).toFixed(1)
 })
 
 const fileTypeStats = computed(() => [
@@ -177,87 +204,101 @@ function fileIcon(type) {
   return File
 }
 
-function openFolder(folderId) {
+async function openFolder(folderId) {
   currentFolderId.value = folderId
+  await fetchFiles()
 }
 
-function goBack() {
+async function goBack() {
   currentFolderId.value = null
+  await fetchFiles()
 }
 
-let nextFolderId = 5
-function createFolder() {
+async function createFolder() {
   if (!newFolderName.value) {
     toast.error('Entrez un nom de dossier')
     return
   }
-  folders.value.push({
-    id: nextFolderId++,
-    name: newFolderName.value,
-    filesCount: 0,
-    createdAt: new Date().toISOString().split('T')[0],
-    createdBy: 'Moi',
-  })
-  newFolderName.value = ''
-  showCreateFolder.value = false
-  toast.success('Dossier créé')
+  try {
+    await folderService.create({ name: newFolderName.value })
+    newFolderName.value = ''
+    showCreateFolder.value = false
+    toast.success('Dossier créé')
+    await fetchFolders()
+  } catch {
+    toast.error('Erreur lors de la création du dossier')
+  }
 }
 
-let nextFileId = 6
-function uploadFile() {
+async function uploadFile() {
   if (!uploadedFile.value) {
     toast.error('Veuillez sélectionner un fichier à archiver.')
     return
   }
-  files.value.push({
-    id: String(nextFileId++),
-    name: newFile.value.name,
-    type: newFile.value.type,
-    category: newFile.value.category || 'Général',
-    size: newFile.value.size,
-    date: new Date().toISOString().split('T')[0],
-    owner: 'Moi',
-    folderId: newFile.value.folderId || currentFolderId.value,
-    accessLog: [{ user: 'Moi', action: 'Uploadé', date: new Date().toLocaleString('fr-FR') }],
-  })
-  if (newFile.value.folderId || currentFolderId.value) {
-    const folder = folders.value.find(f => f.id === (newFile.value.folderId || currentFolderId.value))
-    if (folder) folder.filesCount++
+  try {
+    const formData = new FormData()
+    formData.append('file', uploadedFile.value)
+    formData.append('category', newFile.value.category || 'Général')
+    const targetFolderId = newFile.value.folderId || currentFolderId.value
+    if (targetFolderId) formData.append('folder_id', targetFolderId)
+    await fileService.upload(formData)
+    removeSelectedFile()
+    showUploadFile.value = false
+    toast.success('Fichier archivé avec succès')
+    await Promise.all([fetchFiles(), fetchFolders()])
+  } catch {
+    toast.error('Erreur lors de l\'archivage du fichier')
   }
-  removeSelectedFile()
-  showUploadFile.value = false
-  toast.success('Fichier archivé avec succès')
 }
 
-function viewAccessLog(file) {
-  selectedFile.value = file
-  showAccessLog.value = true
-}
-
-function downloadFile(file) {
-  file.accessLog.push({
-    user: 'Moi',
-    action: 'Téléchargé',
-    date: new Date().toLocaleString('fr-FR'),
-  })
-  toast.success(`Téléchargement de ${file.name}`)
-}
-
-function deleteFile(id) {
-  const file = files.value.find(f => f.id === id)
-  if (file && file.folderId) {
-    const folder = folders.value.find(f => f.id === file.folderId)
-    if (folder) folder.filesCount--
+async function viewAccessLog(file) {
+  try {
+    const { data } = await fileService.get(file.id)
+    const detailed = data.data ?? data
+    selectedFile.value = {
+      ...file,
+      accessLog: detailed.access_logs || [],
+    }
+    showAccessLog.value = true
+  } catch {
+    toast.error('Erreur lors du chargement de la traçabilité')
   }
-  files.value = files.value.filter(f => f.id !== id)
-  toast.success('Fichier supprimé')
 }
 
-function deleteFolder(id) {
-  files.value = files.value.filter(f => f.folderId !== id)
-  folders.value = folders.value.filter(f => f.id !== id)
-  if (currentFolderId.value === id) currentFolderId.value = null
-  toast.success('Dossier supprimé')
+async function downloadFile(file) {
+  try {
+    const { data } = await fileService.download(file.id)
+    const url = URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = file.name
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success(`Téléchargement de ${file.name}`)
+  } catch {
+    toast.error('Erreur lors du téléchargement')
+  }
+}
+
+async function deleteFile(id) {
+  try {
+    await fileService.delete(id)
+    toast.success('Fichier supprimé')
+    await Promise.all([fetchFiles(), fetchFolders()])
+  } catch {
+    toast.error('Erreur lors de la suppression du fichier')
+  }
+}
+
+async function deleteFolder(id) {
+  try {
+    await folderService.delete(id)
+    if (currentFolderId.value === id) currentFolderId.value = null
+    toast.success('Dossier supprimé')
+    await Promise.all([fetchFolders(), fetchFiles()])
+  } catch {
+    toast.error('Erreur lors de la suppression du dossier')
+  }
 }
 
 function exportData() {
@@ -270,6 +311,11 @@ function exportData() {
   link.click()
   toast.success('Données exportées')
 }
+
+onMounted(() => {
+  fetchFolders()
+  fetchFiles()
+})
 </script>
 
 <template>

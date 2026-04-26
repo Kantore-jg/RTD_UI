@@ -20,15 +20,15 @@ const routes = [
     meta: { requiresAuth: true },
     children: [
       { path: 'dashboard', component: () => import('@/pages/dashboard/Dashboard.vue') },
-      { path: 'employees', component: () => import('@/pages/dashboard/EmployeesPage.vue') },
-      { path: 'tasks', component: () => import('@/pages/dashboard/TasksPage.vue') },
-      { path: 'projects', component: () => import('@/pages/dashboard/ProjectsPage.vue') },
-      { path: 'finance', component: () => import('@/pages/dashboard/FinancePage.vue') },
-      { path: 'attendance', component: () => import('@/pages/dashboard/AttendancePage.vue') },
-      { path: 'archives', component: () => import('@/pages/dashboard/ArchivesPage.vue') },
-      { path: 'communication', component: () => import('@/pages/dashboard/CommunicationPage.vue') },
-      { path: 'builder', component: () => import('@/pages/dashboard/BuilderPage.vue') },
-      { path: 'module/:id', component: () => import('@/pages/dashboard/DynamicModulePage.vue'), props: true },
+      { path: 'employees', component: () => import('@/pages/dashboard/EmployeesPage.vue'), meta: { moduleId: 'employees' } },
+      { path: 'tasks', component: () => import('@/pages/dashboard/TasksPage.vue'), meta: { moduleId: 'tasks' } },
+      { path: 'projects', component: () => import('@/pages/dashboard/ProjectsPage.vue'), meta: { moduleId: 'projects' } },
+      { path: 'finance', component: () => import('@/pages/dashboard/FinancePage.vue'), meta: { moduleId: 'finance' } },
+      { path: 'attendance', component: () => import('@/pages/dashboard/AttendancePage.vue'), meta: { moduleId: 'attendance' } },
+      { path: 'archives', component: () => import('@/pages/dashboard/ArchivesPage.vue'), meta: { moduleId: 'archives' } },
+      { path: 'communication', component: () => import('@/pages/dashboard/CommunicationPage.vue'), meta: { moduleId: 'communication' } },
+      { path: 'builder', component: () => import('@/pages/dashboard/BuilderPage.vue'), meta: { moduleId: 'builder' } },
+      { path: 'module/:id', component: () => import('@/pages/dashboard/DynamicModulePage.vue'), props: true, meta: { moduleId: 'builder' } },
       { path: 'profile', component: () => import('@/pages/dashboard/ProfilePage.vue') },
       { path: 'settings', component: () => import('@/pages/dashboard/SettingsPage.vue') },
       { path: 'super-admin', component: () => import('@/pages/superadmin/SuperAdminDashboard.vue') },
@@ -47,8 +47,16 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const authStore = useAuthStore()
+
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return { path: '/login' }
+  }
+
+  if (to.meta.moduleId && authStore.isAuthenticated && !authStore.isSuperAdmin) {
+    const allowed = authStore.allowedModules
+    if (!allowed.includes(to.meta.moduleId)) {
+      return { path: '/dashboard' }
+    }
   }
 })
 

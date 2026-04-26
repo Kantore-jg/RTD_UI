@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { contactService } from '@/services/contact'
 
 const form = ref({
   firstName: '',
@@ -52,44 +53,52 @@ async function handleSubmit() {
   }
 
   isSubmitting.value = true
-
-  // Simulate API call
-  await new Promise((resolve) => setTimeout(resolve, 1200))
-
-  toast.success('Message envoyé avec succès !', {
-    description: 'Notre équipe vous répondra dans les plus brefs délais.',
-  })
-
-  form.value = {
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    company: '',
-    subject: '',
-    message: '',
+  try {
+    await contactService.send({
+      first_name: form.value.firstName,
+      last_name: form.value.lastName,
+      email: form.value.email,
+      phone: form.value.phone,
+      company: form.value.company,
+      subject: form.value.subject,
+      message: form.value.message,
+    })
+    toast.success('Message envoyé avec succès !', {
+      description: 'Notre équipe vous répondra dans les plus brefs délais.',
+    })
+    form.value = {
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: '',
+      company: '',
+      subject: '',
+      message: '',
+    }
+  } catch {
+    toast.error('Erreur lors de l\'envoi du message. Veuillez réessayer.')
+  } finally {
+    isSubmitting.value = false
   }
-
-  isSubmitting.value = false
 }
 
 const contactInfo = [
   {
     icon: Mail,
     title: 'Email',
-    value: 'codewithkantox@gmail.com',
+    value: import.meta.env.VITE_CONTACT_EMAIL || 'contact@rdt-platform.com',
     description: 'Réponse sous 24h ouvrées',
   },
   {
     icon: Phone,
     title: 'Téléphone',
-    value: '+257 67908378',
+    value: import.meta.env.VITE_CONTACT_PHONE || '+257 00 000 000',
     description: 'Lun - Ven, 9h - 18h',
   },
   {
     icon: MapPin,
     title: 'Adresse',
-    value: 'Burundi, Bujumbura',
+    value: import.meta.env.VITE_CONTACT_ADDRESS || 'Burundi, Bujumbura',
     description: 'Sur rendez-vous uniquement',
   },
   {

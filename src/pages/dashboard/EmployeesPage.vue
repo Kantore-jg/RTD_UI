@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   Users, Search, Filter, UserPlus, MoreHorizontal,
   Download, Briefcase, Edit, Trash2, ShieldCheck,
@@ -23,14 +23,10 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { toast } from 'vue-sonner'
+import { employeeService } from '@/services/employees'
 
-const employees = ref([
-  { id: '1', name: 'Sarah Lawson', email: 'sarah.l@acme.com', phone: '+257 79 111 111', role: 'Leader', department: 'Produit', status: 'Active', joined: '2023-01-15' },
-  { id: '2', name: 'Marc Kouassi', email: 'marc.k@acme.com', phone: '+257 79 222 222', role: 'Employé', department: 'Ingénierie', status: 'Active', joined: '2022-11-20' },
-  { id: '3', name: 'Alice Mensah', email: 'alice.m@acme.com', phone: '+257 79 333 333', role: 'Directeur Général', department: 'Direction', status: 'Active', joined: '2021-06-10' },
-  { id: '4', name: 'Paul Atreides', email: 'paul.a@acme.com', phone: '+257 79 444 444', role: 'Employé', department: 'Data', status: 'Active', joined: '2024-02-01' },
-  { id: '5', name: 'Franck Nguessan', email: 'f.nguessan@acme.com', phone: '+257 79 555 555', role: 'Employé', department: 'Marketing', status: 'Inactive', joined: '2023-09-12' },
-])
+const loading = ref(true)
+const employees = ref([])
 
 const searchTerm = ref('')
 const showAddDialog = ref(false)
@@ -50,9 +46,9 @@ const filteredEmployees = computed(() => {
   if (searchTerm.value) {
     const term = searchTerm.value.toLowerCase()
     list = list.filter(emp =>
-      emp.name.toLowerCase().includes(term) ||
-      emp.email.toLowerCase().includes(term) ||
-      emp.department.toLowerCase().includes(term)
+      (emp.name || '').toLowerCase().includes(term) ||
+      (emp.email || '').toLowerCase().includes(term) ||
+      (emp.department || '').toLowerCase().includes(term)
     )
   }
   return list
@@ -62,7 +58,7 @@ const stats = computed(() => ({
   total: employees.value.filter(e => e.status === 'Active').length,
   leaders: employees.value.filter(e => e.role === 'Leader').length,
   newThisQuarter: employees.value.filter(e => {
-    const d = new Date(e.joined)
+    const d = new Date(e.joined_at || e.joined)
     const now = new Date()
     return d.getFullYear() === now.getFullYear() && Math.floor(d.getMonth() / 3) === Math.floor(now.getMonth() / 3)
   }).length,
@@ -72,26 +68,50 @@ function getInitials(name) {
   return name.split(' ').map(n => n[0]).join('')
 }
 
-let nextId = 6
+async function fetchEmployees() {
+  try {
+    loading.value = true
+    const response = await employeeService.list()
+    const result = response.data
+    employees.value = result.data || result
+  } catch (error) {
+    toast.error('Erreur lors du chargement des employés')
+  } finally {
+    loading.value = false
+  }
+}
 
-function addEmployee() {
+onMounted(() => {
+  fetchEmployees()
+})
+
+async function addEmployee() {
   if (!newEmployee.value.name || !newEmployee.value.email || !newEmployee.value.department) {
     toast.error('Veuillez remplir les champs obligatoires (nom, email, département)')
     return
   }
-  employees.value.push({
-    id: String(nextId++),
-    name: newEmployee.value.name,
-    email: newEmployee.value.email,
-    phone: newEmployee.value.phone,
-    role: newEmployee.value.role,
-    department: newEmployee.value.department,
-    status: 'Active',
-    joined: new Date().toISOString().split('T')[0],
-  })
-  newEmployee.value = { name: '', email: '', phone: '', role: 'Employé', department: '', identifiant: '', password: '' }
-  showAddDialog.value = false
-  toast.success('Employé ajouté avec succès')
+  try {
+    const payload = {
+      name: newEmployee.value.name,
+      email: newEmployee.value.email,
+      phone: newEmployee.value.phone,
+      role: newEmployee.value.role,
+      department: newEmployee.value.department,
+    }
+    if (newEmployee.value.identifiant && newEmployee.value.password) {
+      payload.create_account = true
+      payload.identifiant = newEmployee.value.identifiant
+      payload.password = newEmployee.value.password
+    }
+    await employeeService.create(payload)
+    newEmployee.value = { name: '', email: '', phone: '', role: 'Employé', department: '', identifiant: '', password: '' }
+    showAddDialog.value = false
+    toast.success('Employé ajouté avec succès')
+    await fetchEmployees()
+  } catch (error) {
+    const msg = error.response?.data?.message || 'Erreur lors de l\'ajout de l\'employé'
+    toast.error(msg)
+  }
 }
 
 function startEdit(emp) {
@@ -99,36 +119,56 @@ function startEdit(emp) {
   showEditDialog.value = true
 }
 
-function saveEdit() {
-  const idx = employees.value.findIndex(e => e.id === editingEmployee.value.id)
-  if (idx >= 0) {
-    employees.value[idx] = { ...editingEmployee.value }
+async function saveEdit() {
+  try {
+    await employeeService.update(editingEmployee.value.id, {
+      name: editingEmployee.value.name,
+      email: editingEmployee.value.email,
+      phone: editingEmployee.value.phone,
+      role: editingEmployee.value.role,
+      department: editingEmployee.value.department,
+    })
     showEditDialog.value = false
     toast.success('Profil mis à jour')
+    await fetchEmployees()
+  } catch (error) {
+    const msg = error.response?.data?.message || 'Erreur lors de la mise à jour du profil'
+    toast.error(msg)
   }
 }
 
-function toggleStatus(emp) {
-  emp.status = emp.status === 'Active' ? 'Inactive' : 'Active'
-  toast.success(`Accès ${emp.status === 'Active' ? 'activé' : 'désactivé'} pour ${emp.name}`)
+async function toggleStatus(emp) {
+  try {
+    await employeeService.toggleStatus(emp.id)
+    toast.success(`Accès ${emp.status === 'Active' ? 'désactivé' : 'activé'} pour ${emp.name}`)
+    await fetchEmployees()
+  } catch (error) {
+    toast.error('Erreur lors du changement de statut')
+  }
 }
 
-function deleteEmployee(id) {
-  employees.value = employees.value.filter(e => e.id !== id)
-  toast.success('Employé supprimé')
+async function deleteEmployee(id) {
+  try {
+    await employeeService.delete(id)
+    toast.success('Employé supprimé')
+    await fetchEmployees()
+  } catch (error) {
+    toast.error('Erreur lors de la suppression de l\'employé')
+  }
 }
 
-function exportCSV() {
-  const header = 'Nom,Email,Téléphone,Rôle,Département,Statut,Date d\'arrivée\n'
-  const rows = employees.value.map(e =>
-    `${e.name},${e.email},${e.phone},${e.role},${e.department},${e.status},${e.joined}`
-  ).join('\n')
-  const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = 'employes.csv'
-  link.click()
-  toast.success('Export CSV téléchargé')
+async function exportCSV() {
+  try {
+    const response = await employeeService.exportCsv()
+    const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = 'employes.csv'
+    link.click()
+    toast.success('Export CSV téléchargé')
+  } catch (error) {
+    toast.error('Erreur lors de l\'export CSV')
+  }
 }
 </script>
 
@@ -290,7 +330,7 @@ function exportCSV() {
               </Badge>
             </TableCell>
             <TableCell>
-              <span class="text-xs font-semibold text-slate-500">{{ emp.joined }}</span>
+              <span class="text-xs font-semibold text-slate-500">{{ emp.joined_at || emp.joined || '—' }}</span>
             </TableCell>
             <TableCell class="text-right pr-6">
               <DropdownMenu>

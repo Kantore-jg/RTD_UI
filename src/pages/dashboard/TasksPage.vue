@@ -25,9 +25,13 @@ import { cn } from '@/lib/utils'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
+import { taskService } from '@/services/tasks'
+import { employeeService } from '@/services/employees'
 
 const authStore = useAuthStore()
 const { isAdmin, isEmployee, employeeId } = storeToRefs(authStore)
+
+const loading = ref(false)
 
 const COLUMNS = [
   { id: 'PENDING', label: 'En attente', color: 'bg-slate-500' },
@@ -36,22 +40,9 @@ const COLUMNS = [
   { id: 'CANCELLED', label: 'Annulé', color: 'bg-red-500' },
 ]
 
-const ASSIGNEES = [
-  { id: 'SL', name: 'Sarah Lawson' },
-  { id: 'MK', name: 'Marc Kouassi' },
-  { id: 'AM', name: 'Alice Mensah' },
-  { id: 'JD', name: 'Jean Dupont' },
-  { id: 'PA', name: 'Paul Atreides' },
-]
+const ASSIGNEES = ref([])
 
-const tasks = ref([
-  { id: '1', title: 'Intégration API Stripe', description: 'Intégrer le module de paiement Stripe', status: 'IN_PROGRESS', priority: 'HIGH', comments: 12, files: 3, progress: 65, assignees: ['SL', 'MK'], dueDate: '2026-05-15', createdAt: '2026-04-01' },
-  { id: '2', title: 'Correction bug Sidebar', description: 'Corriger le bug d\'affichage du menu latéral', status: 'PENDING', priority: 'MEDIUM', comments: 4, files: 0, progress: 0, assignees: ['MK'], dueDate: '2026-04-30', createdAt: '2026-04-10' },
-  { id: '3', title: 'Validation designs Mobile', description: 'Valider les maquettes pour la version mobile', status: 'COMPLETED', priority: 'CRITICAL', comments: 28, files: 15, progress: 100, assignees: ['AM', 'SL', 'JD'], dueDate: '2026-04-20', createdAt: '2026-03-15' },
-  { id: '4', title: 'Rédaction documentation RH', description: 'Rédiger la documentation des processus RH', status: 'PENDING', priority: 'LOW', comments: 2, files: 1, progress: 0, assignees: ['JD'], dueDate: '2026-06-01', createdAt: '2026-04-05' },
-  { id: '5', title: 'Mise à jour serveurs', description: 'Mettre à jour l\'infrastructure serveur', status: 'IN_PROGRESS', priority: 'HIGH', comments: 8, files: 2, progress: 20, assignees: ['MK', 'PA'], dueDate: '2026-05-10', createdAt: '2026-04-12' },
-  { id: '6', title: 'Analyse des logs Q1', description: 'Analyser les logs du premier trimestre', status: 'CANCELLED', priority: 'LOW', comments: 1, files: 0, progress: 0, assignees: ['PA'], dueDate: '2026-04-15', createdAt: '2026-03-20' },
-])
+const tasks = ref([])
 
 const viewMode = ref('board')
 const searchTerm = ref('')
@@ -68,6 +59,34 @@ const newTask = ref({
 
 const showNewAssigneeDropdown = ref(false)
 const showEditAssigneeDropdown = ref(false)
+
+async function fetchTasks() {
+  try {
+    loading.value = true
+    const response = await taskService.list()
+    const raw = response.data.data || response.data
+    tasks.value = (Array.isArray(raw) ? raw : []).map(t => ({
+      ...t,
+      dueDate: t.due_date || t.dueDate || '',
+      createdAt: t.created_at || t.createdAt || '',
+      comments: t.comments || 0,
+    }))
+  } catch (err) {
+    toast.error('Erreur lors du chargement des tâches')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchEmployees() {
+  try {
+    const response = await employeeService.list()
+    const employees = response.data.data || response.data
+    ASSIGNEES.value = employees.map(e => ({ id: e.id, name: e.name }))
+  } catch (err) {
+    toast.error('Erreur lors du chargement des employés')
+  }
+}
 
 function toggleNewAssignee(id) {
   const idx = newTask.value.assignees.indexOf(id)
@@ -100,11 +119,11 @@ function removeEditAssignee(id) {
 const filteredTasks = computed(() => {
   let list = tasks.value
   if (isEmployee.value && employeeId.value) {
-    list = list.filter(t => t.assignees && t.assignees.includes(employeeId.value))
+    list = list.filter(t => t.assignees && t.assignees.some(a => a.id === employeeId.value || a === employeeId.value))
   }
   if (searchTerm.value) {
     const term = searchTerm.value.toLowerCase()
-    list = list.filter(t => t.title.toLowerCase().includes(term) || t.description.toLowerCase().includes(term))
+    list = list.filter(t => t.title.toLowerCase().includes(term) || (t.description || '').toLowerCase().includes(term))
   }
   if (filterStatus.value) {
     list = list.filter(t => t.status === filterStatus.value)
@@ -115,7 +134,7 @@ const filteredTasks = computed(() => {
   if (filterPeriod.value) {
     const now = new Date()
     list = list.filter(t => {
-      const created = new Date(t.createdAt)
+      const created = new Date(t.createdAt || t.created_at)
       const diff = (now - created) / (1000 * 60 * 60 * 24)
       if (filterPeriod.value === 'today') return diff <= 1
       if (filterPeriod.value === 'week') return diff <= 7
@@ -131,61 +150,84 @@ function tasksForColumn(colId) {
   return filteredTasks.value.filter(t => t.status === colId)
 }
 
-let nextId = 7
-
-function addTask() {
+async function addTask() {
   if (!newTask.value.title) {
     toast.error('Le titre est obligatoire')
     return
   }
-  tasks.value.push({
-    id: String(nextId++),
-    title: newTask.value.title,
-    description: newTask.value.description,
-    status: newTask.value.status,
-    priority: newTask.value.priority,
-    assignees: [...newTask.value.assignees],
-    dueDate: newTask.value.dueDate,
-    comments: 0,
-    files: 0,
-    progress: 0,
-    createdAt: new Date().toISOString().split('T')[0],
-  })
-  newTask.value = { title: '', description: '', priority: 'MEDIUM', assignees: [], dueDate: '', status: 'PENDING' }
-  showNewAssigneeDropdown.value = false
-  showAddDialog.value = false
-  toast.success('Tâche créée avec succès')
+  try {
+    await taskService.create({
+      title: newTask.value.title,
+      description: newTask.value.description,
+      status: newTask.value.status,
+      priority: newTask.value.priority,
+      assignees: newTask.value.assignees,
+      due_date: newTask.value.dueDate,
+    })
+    newTask.value = { title: '', description: '', priority: 'MEDIUM', assignees: [], dueDate: '', status: 'PENDING' }
+    showNewAssigneeDropdown.value = false
+    showAddDialog.value = false
+    toast.success('Tâche créée avec succès')
+    await fetchTasks()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la création de la tâche')
+  }
 }
 
-function markComplete(task) {
-  task.status = 'COMPLETED'
-  task.progress = 100
-  toast.success(`"${task.title}" marquée comme terminée`)
+async function markComplete(task) {
+  try {
+    await taskService.updateStatus(task.id, 'COMPLETED')
+    toast.success(`"${task.title}" marquée comme terminée`)
+    await fetchTasks()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la mise à jour')
+  }
 }
 
-function markCancelled(task) {
-  task.status = 'CANCELLED'
-  toast.info(`"${task.title}" annulée`)
+async function markCancelled(task) {
+  try {
+    await taskService.updateStatus(task.id, 'CANCELLED')
+    toast.info(`"${task.title}" annulée`)
+    await fetchTasks()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de l\'annulation')
+  }
 }
 
 function startEdit(task) {
-  editingTask.value = { ...task, assignees: [...(task.assignees || [])] }
+  const assigneeIds = (task.assignees || []).map(a => typeof a === 'object' ? a.id : a)
+  editingTask.value = { ...task, assignees: [...assigneeIds] }
   showEditDialog.value = true
   showEditAssigneeDropdown.value = false
 }
 
-function saveEdit() {
-  const idx = tasks.value.findIndex(t => t.id === editingTask.value.id)
-  if (idx >= 0) {
-    tasks.value[idx] = { ...editingTask.value }
+async function saveEdit() {
+  try {
+    await taskService.update(editingTask.value.id, {
+      title: editingTask.value.title,
+      description: editingTask.value.description,
+      status: editingTask.value.status,
+      priority: editingTask.value.priority,
+      progress: editingTask.value.progress,
+      assignees: editingTask.value.assignees,
+      due_date: editingTask.value.dueDate || editingTask.value.due_date,
+    })
     showEditDialog.value = false
     toast.success('Tâche mise à jour')
+    await fetchTasks()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la mise à jour')
   }
 }
 
-function deleteTask(id) {
-  tasks.value = tasks.value.filter(t => t.id !== id)
-  toast.success('Tâche supprimée')
+async function deleteTask(id) {
+  try {
+    await taskService.delete(id)
+    toast.success('Tâche supprimée')
+    await fetchTasks()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la suppression')
+  }
 }
 
 function priorityColor(priority) {
@@ -208,8 +250,10 @@ function statusColor(status) {
   return map[status] || ''
 }
 
-function getAssigneeName(id) {
-  return ASSIGNEES.find(a => a.id === id)?.name || id
+function getAssigneeName(idOrObj) {
+  if (typeof idOrObj === 'object' && idOrObj !== null) return idOrObj.name || String(idOrObj.id)
+  const found = ASSIGNEES.value.find(a => a.id === idOrObj)
+  return found?.name || String(idOrObj || '?')
 }
 
 function handleClickOutside(e) {
@@ -219,7 +263,10 @@ function handleClickOutside(e) {
   }
 }
 
-onMounted(() => document.addEventListener('click', handleClickOutside))
+onMounted(async () => {
+  document.addEventListener('click', handleClickOutside)
+  await Promise.all([fetchTasks(), fetchEmployees()])
+})
 onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 </script>
 
@@ -408,12 +455,12 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
                 </div>
                 <div v-if="task.assignees && task.assignees.length > 0" class="flex items-center -space-x-1.5">
                   <div
-                    v-for="(aId, idx) in task.assignees.slice(0, 3)" :key="aId"
+                    v-for="(aId, idx) in task.assignees.slice(0, 3)" :key="typeof aId === 'object' ? aId.id : aId"
                     class="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center font-bold text-[9px] text-slate-600 border-2 border-white dark:border-slate-800"
                     :title="getAssigneeName(aId)"
                     :style="{ zIndex: 10 - idx }"
                   >
-                    {{ aId }}
+                    {{ getAssigneeName(aId).split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() }}
                   </div>
                   <div v-if="task.assignees.length > 3" class="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-600 flex items-center justify-center font-bold text-[9px] text-slate-500 border-2 border-white dark:border-slate-800" :style="{ zIndex: 6 }">
                     +{{ task.assignees.length - 3 }}
@@ -466,7 +513,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
               <TableCell>
                 <div v-if="task.assignees && task.assignees.length > 0" class="flex flex-wrap gap-1">
                   <span
-                    v-for="aId in task.assignees" :key="aId"
+                    v-for="aId in task.assignees" :key="typeof aId === 'object' ? aId.id : aId"
                     class="inline-flex items-center bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[11px] font-medium"
                   >{{ getAssigneeName(aId) }}</span>
                 </div>

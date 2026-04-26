@@ -16,39 +16,16 @@ import { Progress } from '@/components/ui/progress'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
+import { attendanceService } from '@/services/attendance'
 
 const authStore = useAuthStore()
 const { user, isAdmin, isEmployee } = storeToRefs(authStore)
 
 const today = new Date().toISOString().split('T')[0]
 
-const MOCK_ATTENDANCE = ref([
-  { id: 1, nom: 'Sarah Lawson', arrivee: '07:55', depart: '17:02', statut: 'Présent', poste: 'Développeur Frontend', date: today, employeeId: 'SL' },
-  { id: 2, nom: 'Marc Kouassi', arrivee: '08:30', depart: '—', statut: 'Présent', poste: 'DevOps', date: today, employeeId: 'MK' },
-  { id: 3, nom: 'Alice Mensah', arrivee: '—', depart: '—', statut: 'Absent', poste: 'Chef de Projet', date: today, employeeId: 'AM' },
-  { id: 4, nom: 'Jean Dupont', arrivee: '09:15', depart: '—', statut: 'Retard', poste: 'Directeur', date: today, employeeId: 'JD' },
-  { id: 5, nom: 'Paul Atreides', arrivee: '07:50', depart: '16:45', statut: 'Présent', poste: 'Analyste', date: today, employeeId: 'PA' },
-  { id: 6, nom: 'Sarah Lawson', arrivee: '08:00', depart: '17:00', statut: 'Présent', poste: 'Développeur Frontend', date: '2026-04-24', employeeId: 'SL' },
-  { id: 7, nom: 'Marc Kouassi', arrivee: '07:45', depart: '16:30', statut: 'Présent', poste: 'DevOps', date: '2026-04-24', employeeId: 'MK' },
-  { id: 8, nom: 'Alice Mensah', arrivee: '08:05', depart: '17:10', statut: 'Présent', poste: 'Chef de Projet', date: '2026-04-24', employeeId: 'AM' },
-  { id: 9, nom: 'Jean Dupont', arrivee: '08:00', depart: '17:00', statut: 'Présent', poste: 'Directeur', date: '2026-04-24', employeeId: 'JD' },
-  { id: 10, nom: 'Paul Atreides', arrivee: '—', depart: '—', statut: 'Absent', poste: 'Analyste', date: '2026-04-24', employeeId: 'PA' },
-  { id: 11, nom: 'Sarah Lawson', arrivee: '08:10', depart: '16:50', statut: 'Présent', poste: 'Développeur Frontend', date: '2026-04-23', employeeId: 'SL' },
-  { id: 12, nom: 'Marc Kouassi', arrivee: '09:00', depart: '17:30', statut: 'Retard', poste: 'DevOps', date: '2026-04-23', employeeId: 'MK' },
-  { id: 13, nom: 'Alice Mensah', arrivee: '07:58', depart: '17:05', statut: 'Présent', poste: 'Chef de Projet', date: '2026-04-23', employeeId: 'AM' },
-  { id: 14, nom: 'Jean Dupont', arrivee: '08:02', depart: '16:55', statut: 'Présent', poste: 'Directeur', date: '2026-04-23', employeeId: 'JD' },
-  { id: 15, nom: 'Paul Atreides', arrivee: '08:00', depart: '17:00', statut: 'Présent', poste: 'Analyste', date: '2026-04-23', employeeId: 'PA' },
-  { id: 16, nom: 'Sarah Lawson', arrivee: '07:50', depart: '17:10', statut: 'Présent', poste: 'Développeur Frontend', date: '2026-04-22', employeeId: 'SL' },
-  { id: 17, nom: 'Marc Kouassi', arrivee: '08:05', depart: '17:00', statut: 'Présent', poste: 'DevOps', date: '2026-04-22', employeeId: 'MK' },
-  { id: 18, nom: 'Alice Mensah', arrivee: '—', depart: '—', statut: 'Absent', poste: 'Chef de Projet', date: '2026-04-22', employeeId: 'AM' },
-  { id: 19, nom: 'Jean Dupont', arrivee: '08:00', depart: '17:00', statut: 'Présent', poste: 'Directeur', date: '2026-04-22', employeeId: 'JD' },
-  { id: 20, nom: 'Paul Atreides', arrivee: '08:30', depart: '17:15', statut: 'Retard', poste: 'Analyste', date: '2026-04-22', employeeId: 'PA' },
-  { id: 21, nom: 'Sarah Lawson', arrivee: '08:00', depart: '17:00', statut: 'Présent', poste: 'Développeur Frontend', date: '2026-04-21', employeeId: 'SL' },
-  { id: 22, nom: 'Marc Kouassi', arrivee: '07:55', depart: '16:50', statut: 'Présent', poste: 'DevOps', date: '2026-04-21', employeeId: 'MK' },
-  { id: 23, nom: 'Alice Mensah', arrivee: '08:00', depart: '17:00', statut: 'Présent', poste: 'Chef de Projet', date: '2026-04-21', employeeId: 'AM' },
-  { id: 24, nom: 'Jean Dupont', arrivee: '09:10', depart: '17:30', statut: 'Retard', poste: 'Directeur', date: '2026-04-21', employeeId: 'JD' },
-  { id: 25, nom: 'Paul Atreides', arrivee: '08:00', depart: '17:00', statut: 'Présent', poste: 'Analyste', date: '2026-04-21', employeeId: 'PA' },
-])
+const loading = ref(false)
+const attendanceData = ref([])
+const apiStats = ref(null)
 
 const isClockedIn = ref(false)
 const clockInTime = ref(null)
@@ -60,60 +37,82 @@ const filterPeriod = ref('week')
 const searchTerm = ref('')
 
 let timer = null
-let nextId = 30
 
-onMounted(() => {
+async function fetchAttendance() {
+  try {
+    loading.value = true
+    const response = await attendanceService.list()
+    const raw = response.data.data || response.data
+    attendanceData.value = (Array.isArray(raw) ? raw : []).map(r => ({
+      ...r,
+      nom: r.employee?.name || r.nom || 'Inconnu',
+      employeeId: r.employee_id || r.employeeId,
+      poste: r.poste || '',
+      arrivee: r.arrivee || '—',
+      depart: r.depart || '—',
+    }))
+  } catch (err) {
+    toast.error('Erreur lors du chargement des présences')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchStats() {
+  try {
+    const response = await attendanceService.stats({ period: filterPeriod.value })
+    apiStats.value = response.data.data || response.data
+  } catch {
+    apiStats.value = null
+  }
+}
+
+onMounted(async () => {
   timer = setInterval(() => {
     currentTime.value = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   }, 1000)
 
-  const myTodayRecord = MOCK_ATTENDANCE.value.find(
-    r => r.date === today && r.employeeId === user.value?.employeeId
+  await fetchAttendance()
+
+  const myEmpId = user.value?.employee?.id || user.value?.employee_id
+  const myTodayRecord = attendanceData.value.find(
+    r => r.date === today && (r.employee_id === myEmpId || r.employeeId === myEmpId)
   )
-  if (myTodayRecord && myTodayRecord.arrivee !== '—') {
-    isClockedIn.value = myTodayRecord.depart === '—'
+  if (myTodayRecord && myTodayRecord.arrivee && myTodayRecord.arrivee !== '—') {
+    isClockedIn.value = !myTodayRecord.depart || myTodayRecord.depart === '—'
     clockInTime.value = myTodayRecord.arrivee
   }
+
+  await fetchStats()
 })
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
 
-function toggleClock() {
+async function toggleClock() {
   const now = new Date()
   const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-  const empId = user.value?.employeeId
-  const empName = user.value?.name || 'Utilisateur'
 
   if (!isClockedIn.value) {
-    const existing = MOCK_ATTENDANCE.value.find(r => r.date === today && r.employeeId === empId)
-    if (existing) {
-      existing.arrivee = timeStr
-      existing.depart = '—'
-      existing.statut = now.getHours() >= 9 ? 'Retard' : 'Présent'
-    } else {
-      MOCK_ATTENDANCE.value.unshift({
-        id: nextId++,
-        nom: empName,
-        arrivee: timeStr,
-        depart: '—',
-        statut: now.getHours() >= 9 ? 'Retard' : 'Présent',
-        poste: 'Employé',
-        date: today,
-        employeeId: empId,
-      })
+    try {
+      await attendanceService.clockIn({ poste: user.value?.poste || 'Employé' })
+      isClockedIn.value = true
+      clockInTime.value = timeStr
+      toast.success(`Arrivée enregistrée à ${timeStr}`)
+      await fetchAttendance()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Erreur lors du pointage d\'arrivée')
     }
-    isClockedIn.value = true
-    clockInTime.value = timeStr
-    toast.success(`Arrivée enregistrée à ${timeStr}`)
   } else {
-    const record = MOCK_ATTENDANCE.value.find(r => r.date === today && r.employeeId === empId)
-    if (record) {
-      record.depart = timeStr
+    try {
+      await attendanceService.clockOut()
+      isClockedIn.value = false
+      toast.success(`Sortie enregistrée à ${timeStr}`)
+      await fetchAttendance()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Erreur lors du pointage de sortie')
     }
-    isClockedIn.value = false
-    toast.success(`Sortie enregistrée à ${timeStr}`)
   }
 }
 
@@ -129,7 +128,7 @@ function applyRoleFilter(records) {
 }
 
 const todayRecords = computed(() => {
-  let records = MOCK_ATTENDANCE.value.filter(e => e.date === today)
+  let records = attendanceData.value.filter(e => e.date === today)
   records = applyRoleFilter(records)
   if (searchTerm.value) {
     const term = searchTerm.value.toLowerCase()
@@ -140,7 +139,7 @@ const todayRecords = computed(() => {
 
 const filteredRecords = computed(() => {
   const now = new Date()
-  let records = MOCK_ATTENDANCE.value.filter(e => {
+  let records = attendanceData.value.filter(e => {
     const d = new Date(e.date)
     const diffDays = (now - d) / (1000 * 60 * 60 * 24)
     if (filterPeriod.value === 'day') return diffDays < 1
@@ -158,6 +157,7 @@ const filteredRecords = computed(() => {
 })
 
 const stats = computed(() => {
+  if (apiStats.value) return apiStats.value
   const records = filteredRecords.value
   const total = records.length
   const present = records.filter(r => r.statut === 'Présent').length
@@ -180,14 +180,14 @@ const weeklyStats = computed(() => {
   const monday = new Date(now)
   monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
 
-  const uniqueEmployees = new Set(MOCK_ATTENDANCE.value.map(r => r.employeeId))
+  const uniqueEmployees = new Set(attendanceData.value.map(r => r.employeeId))
   const totalEmployees = uniqueEmployees.size
 
   return days.map((day, i) => {
     const d = new Date(monday)
     d.setDate(monday.getDate() + i)
     const dateStr = d.toISOString().split('T')[0]
-    let dayRecords = MOCK_ATTENDANCE.value.filter(r => r.date === dateStr)
+    let dayRecords = attendanceData.value.filter(r => r.date === dateStr)
     if (isEmployee.value && user.value?.employeeId) {
       dayRecords = dayRecords.filter(r => r.employeeId === user.value.employeeId)
     }
@@ -197,16 +197,19 @@ const weeklyStats = computed(() => {
   })
 })
 
-function exportAttendance() {
-  const records = filteredRecords.value
-  const header = 'Date,Nom,Poste,Arrivée,Départ,Statut\n'
-  const rows = records.map(r => `${r.date},${r.nom},${r.poste},${r.arrivee},${r.depart},${r.statut}`).join('\n')
-  const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `presence_${filterPeriod.value}_${today}.csv`
-  link.click()
-  toast.success('Données de présence exportées')
+async function exportAttendance() {
+  try {
+    const response = await attendanceService.exportCsv({ period: filterPeriod.value })
+    const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `presence_${filterPeriod.value}_${today}.csv`
+    link.click()
+    URL.revokeObjectURL(link.href)
+    toast.success('Données de présence exportées')
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de l\'export')
+  }
 }
 
 function statutVariant(statut) {

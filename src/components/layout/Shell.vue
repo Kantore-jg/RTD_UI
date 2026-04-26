@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
@@ -49,7 +49,7 @@ const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const builderStore = useBuilderStore()
 const { user } = storeToRefs(authStore)
-const { isAdmin, isSuperAdmin, isEmployee } = storeToRefs(authStore)
+const { isAdmin, isSuperAdmin, isEmployee, allowedModules } = storeToRefs(authStore)
 const { theme } = storeToRefs(themeStore)
 const { sidebarModules: builderModules } = storeToRefs(builderStore)
 
@@ -57,41 +57,59 @@ const route = useRoute()
 const router = useRouter()
 
 const adminNavItems = [
-  { label: 'Tableau de bord', icon: LayoutDashboard, path: '/dashboard' },
-  { label: 'Employés', icon: Users, path: '/employees' },
-  { label: 'Présence', icon: Calendar, path: '/attendance' },
-  { label: 'Tâches', icon: CheckSquare, path: '/tasks' },
-  { label: 'Projets', icon: Briefcase, path: '/projects' },
-  { label: 'Finance', icon: Wallet, path: '/finance' },
-  { label: 'Archives', icon: Archive, path: '/archives' },
-  { label: 'Communication', icon: MessageSquare, path: '/communication' },
-  { label: 'Dynamic Builder', icon: PlusCircle, path: '/builder' },
-  { label: 'Paramètres', icon: Settings, path: '/settings' },
+  { label: 'Tableau de bord', icon: LayoutDashboard, path: '/dashboard', moduleId: null },
+  { label: 'Employés', icon: Users, path: '/employees', moduleId: 'employees' },
+  { label: 'Présence', icon: Calendar, path: '/attendance', moduleId: 'attendance' },
+  { label: 'Tâches', icon: CheckSquare, path: '/tasks', moduleId: 'tasks' },
+  { label: 'Projets', icon: Briefcase, path: '/projects', moduleId: 'projects' },
+  { label: 'Finance', icon: Wallet, path: '/finance', moduleId: 'finance' },
+  { label: 'Archives', icon: Archive, path: '/archives', moduleId: 'archives' },
+  { label: 'Communication', icon: MessageSquare, path: '/communication', moduleId: 'communication' },
+  { label: 'Dynamic Builder', icon: PlusCircle, path: '/builder', moduleId: 'builder' },
+  { label: 'Paramètres', icon: Settings, path: '/settings', moduleId: null },
 ]
 
 const employeeNavItems = [
-  { label: 'Présence', icon: Calendar, path: '/attendance' },
-  { label: 'Tâches', icon: CheckSquare, path: '/tasks' },
-  { label: 'Projets', icon: Briefcase, path: '/projects' },
-  { label: 'Archives', icon: Archive, path: '/archives' },
-  { label: 'Communication', icon: MessageSquare, path: '/communication' },
-  { label: 'Mon Profil', icon: UserCircle, path: '/profile' },
+  { label: 'Présence', icon: Calendar, path: '/attendance', moduleId: 'attendance' },
+  { label: 'Tâches', icon: CheckSquare, path: '/tasks', moduleId: 'tasks' },
+  { label: 'Projets', icon: Briefcase, path: '/projects', moduleId: 'projects' },
+  { label: 'Archives', icon: Archive, path: '/archives', moduleId: 'archives' },
+  { label: 'Communication', icon: MessageSquare, path: '/communication', moduleId: 'communication' },
+  { label: 'Mon Profil', icon: UserCircle, path: '/profile', moduleId: null },
 ]
 
 const superAdminNavItems = [
-  { label: 'Super Admin', icon: Zap, path: '/super-admin' },
+  { label: 'Super Admin', icon: Zap, path: '/super-admin', moduleId: null },
 ]
 
 const navItems = computed(() => {
   if (isSuperAdmin.value) return superAdminNavItems
-  if (isEmployee.value) return employeeNavItems
-  return adminNavItems
+
+  const modules = allowedModules.value
+  const items = isEmployee.value ? employeeNavItems : adminNavItems
+
+  return items.filter(item => {
+    if (!item.moduleId) return true
+    return modules.includes(item.moduleId)
+  })
 })
 
 function handleLogout() {
   authStore.logout()
   router.push('/')
 }
+
+onMounted(() => {
+  if (isAdmin.value && !builderStore.loaded) {
+    builderStore.fetchModules()
+  }
+})
+
+watch(isAdmin, (val) => {
+  if (val && !builderStore.loaded) {
+    builderStore.fetchModules()
+  }
+})
 </script>
 
 <template>
@@ -194,7 +212,6 @@ function handleLogout() {
           <!-- Notifications -->
           <Button variant="ghost" size="icon" class="relative">
             <Bell class="w-5 h-5" />
-            <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
           </Button>
 
           <!-- User dropdown -->

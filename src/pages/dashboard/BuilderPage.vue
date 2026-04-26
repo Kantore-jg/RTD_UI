@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Plus, Settings, Layout, Database, Eye,
@@ -18,11 +18,15 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { useBuilderStore } from '@/stores/builder'
 import { toast } from 'vue-sonner'
+import { moduleService } from '@/services/builder'
+import { useBuilderStore } from '@/stores/builder'
+import { storeToRefs } from 'pinia'
 
 const router = useRouter()
 const builderStore = useBuilderStore()
+const { modules } = storeToRefs(builderStore)
+const loading = ref(false)
 
 const FIELD_TYPES = [
   { label: 'Entrée Texte', icon: Type, type: 'text', description: 'Champ texte court' },
@@ -47,22 +51,46 @@ const newModuleDescription = ref('')
 const newModuleSidebar = ref(true)
 
 const editingModule = computed(() =>
-  editingModuleId.value !== null ? builderStore.getModule(editingModuleId.value) : null
+  editingModuleId.value !== null ? modules.value.find(m => m.id === editingModuleId.value) : null
 )
 
-function createModule() {
+async function fetchModules() {
+  loading.value = true
+  try {
+    await builderStore.fetchModules()
+  } catch {
+    toast.error('Erreur lors du chargement des modules')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function createModule() {
   if (!newModuleName.value) {
     toast.error('Le nom du module est obligatoire')
     return
   }
-  const mod = builderStore.addModule(newModuleName.value, newModuleDescription.value, newModuleSidebar.value)
-  editingModuleId.value = mod.id
-  currentView.value = 'editor'
-  newModuleName.value = ''
-  newModuleDescription.value = ''
-  newModuleSidebar.value = true
-  showNewModule.value = false
-  toast.success('Module créé — ajoutez des champs')
+  try {
+    const { data } = await moduleService.create({
+      name: newModuleName.value,
+      description: newModuleDescription.value,
+      icon: 'Database',
+      fields: [],
+      show_in_sidebar: newModuleSidebar.value,
+    })
+    const raw = data.data ?? data
+    const mod = builderStore.normalize(raw)
+    modules.value.push(mod)
+    newModuleName.value = ''
+    newModuleDescription.value = ''
+    newModuleSidebar.value = true
+    showNewModule.value = false
+    toast.success('Module créé — ajoutez des champs')
+    editingModuleId.value = mod.id
+    currentView.value = 'editor'
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la création du module')
+  }
 }
 
 function openModuleEditor(mod) {
@@ -80,24 +108,41 @@ function goToModulePage(mod) {
   router.push('/module/' + mod.id)
 }
 
+function slugify(text) {
+  return text.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+}
+
 function addFieldFromToolbox(fieldType) {
   if (!editingModule.value) return
-  builderStore.addField(editingModuleId.value, {
-    label: fieldType.label,
+  const label = fieldType.label
+  editingModule.value.fields.push({
+    id: Date.now(),
+    name: slugify(label),
+    label,
     type: fieldType.type,
     required: false,
     options: fieldType.type === 'select' ? ['Option 1', 'Option 2'] : [],
   })
-  toast.success(`Champ "${fieldType.label}" ajouté`)
+  toast.success(`Champ "${label}" ajouté`)
 }
 
 function removeField(index) {
-  builderStore.removeField(editingModuleId.value, index)
+  if (!editingModule.value) return
+  editingModule.value.fields.splice(index, 1)
   toast.success('Champ supprimé')
 }
 
 function moveField(index, direction) {
-  builderStore.moveField(editingModuleId.value, index, direction)
+  if (!editingModule.value) return
+  const fields = editingModule.value.fields
+  const newIndex = index + direction
+  if (newIndex < 0 || newIndex >= fields.length) return
+  const temp = fields[index]
+  fields[index] = fields[newIndex]
+  fields[newIndex] = temp
 }
 
 function startEditField(field, index) {
@@ -107,29 +152,54 @@ function startEditField(field, index) {
 }
 
 function saveFieldEdit() {
-  const data = {
+  if (!editingModule.value) return
+  const fieldData = {
+    name: slugify(editingField.value.label),
     label: editingField.value.label,
     type: editingField.value.type,
     required: editingField.value.required,
   }
   if (editingField.value.type === 'select') {
-    data.options = editingField.value.options.split(',').map(o => o.trim()).filter(Boolean)
+    fieldData.options = editingField.value.options.split(',').map(o => o.trim()).filter(Boolean)
   } else {
-    data.options = []
+    fieldData.options = []
   }
-  builderStore.updateField(editingModuleId.value, editingFieldIndex.value, data)
+  Object.assign(editingModule.value.fields[editingFieldIndex.value], fieldData)
   showEditField.value = false
   toast.success('Champ mis à jour')
 }
 
-function saveModule() {
-  toast.success(`Module "${editingModule.value.name}" enregistré`)
+async function saveModule() {
+  if (!editingModule.value) return
+  try {
+    const { data } = await moduleService.update(editingModule.value.id, {
+      name: editingModule.value.name,
+      description: editingModule.value.description,
+      icon: editingModule.value.icon,
+      fields: editingModule.value.fields,
+      show_in_sidebar: editingModule.value.showInSidebar,
+    })
+    const updated = data.data ?? data
+    builderStore.updateLocal(editingModule.value.id, {
+      name: updated.name,
+      fields: updated.fields || [],
+      showInSidebar: updated.show_in_sidebar ?? editingModule.value.showInSidebar,
+    })
+    toast.success(`Module "${editingModule.value.name}" enregistré`)
+  } catch {
+    toast.error('Erreur lors de l\'enregistrement du module')
+  }
 }
 
-function deleteModule(id) {
-  builderStore.deleteModule(id)
-  if (editingModuleId.value === id) backToList()
-  toast.success('Module supprimé')
+async function deleteModule(id) {
+  try {
+    await moduleService.delete(id)
+    builderStore.removeLocal(id)
+    if (editingModuleId.value === id) backToList()
+    toast.success('Module supprimé')
+  } catch {
+    toast.error('Erreur lors de la suppression du module')
+  }
 }
 
 function previewModule() {
@@ -145,6 +215,8 @@ function fieldTypeName(type) {
   const map = { text: 'Texte', textarea: 'Zone de texte', number: 'Numérique', date: 'Date', select: 'Sélection', checkbox: 'Case à cocher' }
   return map[type] || type
 }
+
+onMounted(fetchModules)
 </script>
 
 <template>
@@ -206,7 +278,7 @@ function fieldTypeName(type) {
 
     <!-- === MODULE LIST VIEW === -->
     <template v-if="currentView === 'list'">
-      <div v-if="builderStore.modules.length === 0" class="text-center py-20">
+      <div v-if="modules.length === 0" class="text-center py-20">
         <div class="w-20 h-20 bg-muted rounded-2xl flex items-center justify-center mx-auto mb-4 border-2 border-dashed">
           <Database class="w-10 h-10 text-muted-foreground" />
         </div>
@@ -219,7 +291,7 @@ function fieldTypeName(type) {
 
       <div v-else class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div
-          v-for="mod in builderStore.modules" :key="mod.id"
+          v-for="mod in modules" :key="mod.id"
           class="p-5 border-2 rounded-2xl bg-background hover:border-primary/30 transition-all group hover:shadow-xl hover:shadow-primary/5"
         >
           <div class="flex justify-between items-start mb-4">
@@ -241,7 +313,7 @@ function fieldTypeName(type) {
             <div class="flex items-center gap-4 text-xs font-bold text-muted-foreground tracking-tighter mt-2">
               <span>{{ mod.fields.length }} champs</span>
               <span>•</span>
-              <span>{{ mod.entries.length }} entrées</span>
+              <span>{{ mod.entriesCount }} entrées</span>
             </div>
           </div>
           <div class="mt-4 pt-4 border-t-2 border-dashed flex items-center justify-between">

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Database, Plus, Search, Eye, Trash2, Edit,
@@ -19,15 +19,17 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { useBuilderStore } from '@/stores/builder'
 import { toast } from 'vue-sonner'
+import { moduleService, entryService } from '@/services/builder'
 
 const route = useRoute()
 const router = useRouter()
-const builderStore = useBuilderStore()
 
 const moduleId = computed(() => Number(route.params.id))
-const currentModule = computed(() => builderStore.getModule(moduleId.value))
+const currentModule = ref(null)
+const entries = ref([])
+const loading = ref(false)
+const loadingEntries = ref(false)
 
 const activeTab = ref('entries')
 const showAddEntry = ref(false)
@@ -35,6 +37,43 @@ const showEntryDetail = ref(false)
 const selectedEntry = ref(null)
 const searchTerm = ref('')
 const formData = ref({})
+
+async function fetchModule() {
+  loading.value = true
+  try {
+    const { data } = await moduleService.get(moduleId.value)
+    const mod = data.data ?? data
+    currentModule.value = {
+      ...mod,
+      fields: mod.fields || [],
+      entries: [],
+    }
+  } catch {
+    toast.error('Erreur lors du chargement du module')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchEntries() {
+  loadingEntries.value = true
+  try {
+    const { data } = await entryService.list(moduleId.value)
+    entries.value = (data.data ?? data).map(e => ({
+      id: e.id,
+      data: e.data || {},
+      submittedBy: e.submitter?.name || e.submittedBy || 'Inconnu',
+      submittedAt: e.created_at ? new Date(e.created_at).toLocaleDateString('fr-FR') : '',
+    }))
+    if (currentModule.value) {
+      currentModule.value.entries = entries.value
+    }
+  } catch {
+    toast.error('Erreur lors du chargement des entrées')
+  } finally {
+    loadingEntries.value = false
+  }
+}
 
 function resetForm() {
   formData.value = {}
@@ -50,7 +89,7 @@ function openAddEntry() {
   showAddEntry.value = true
 }
 
-function submitEntry() {
+async function submitEntry() {
   if (!currentModule.value) return
   const required = currentModule.value.fields.filter(f => f.required)
   for (const field of required) {
@@ -60,9 +99,14 @@ function submitEntry() {
       return
     }
   }
-  builderStore.addEntry(moduleId.value, formData.value, 'Moi')
-  showAddEntry.value = false
-  toast.success('Entrée enregistrée avec succès')
+  try {
+    await entryService.create(moduleId.value, { data: formData.value })
+    showAddEntry.value = false
+    toast.success('Entrée enregistrée avec succès')
+    await fetchEntries()
+  } catch {
+    toast.error('Erreur lors de l\'enregistrement de l\'entrée')
+  }
 }
 
 function viewEntry(entry) {
@@ -70,14 +114,19 @@ function viewEntry(entry) {
   showEntryDetail.value = true
 }
 
-function deleteEntry(entryId) {
-  builderStore.deleteEntry(moduleId.value, entryId)
-  toast.success('Entrée supprimée')
+async function deleteEntry(entryId) {
+  try {
+    await entryService.delete(entryId)
+    toast.success('Entrée supprimée')
+    await fetchEntries()
+  } catch {
+    toast.error('Erreur lors de la suppression de l\'entrée')
+  }
 }
 
 const filteredEntries = computed(() => {
   if (!currentModule.value) return []
-  let list = currentModule.value.entries
+  let list = entries.value
   if (searchTerm.value) {
     const term = searchTerm.value.toLowerCase()
     list = list.filter(entry =>
@@ -94,26 +143,35 @@ const displayColumns = computed(() => {
   return currentModule.value.fields.slice(0, 5)
 })
 
-function exportCSV() {
+async function exportCSV() {
   if (!currentModule.value) return
-  const fields = currentModule.value.fields
-  const header = fields.map(f => f.label).join(',') + ',Soumis par,Date\n'
-  const rows = currentModule.value.entries.map(e =>
-    fields.map(f => `"${String(e.data[f.label] ?? '').replace(/"/g, '""')}"`).join(',')
-    + `,"${e.submittedBy}","${e.submittedAt}"`
-  ).join('\n')
-  const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `${currentModule.value.name.replace(/\s+/g, '_')}_export.csv`
-  link.click()
-  toast.success('Données exportées en CSV')
+  try {
+    const { data } = await entryService.exportCsv(moduleId.value)
+    const url = URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${currentModule.value.name.replace(/\s+/g, '_')}_export.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success('Données exportées en CSV')
+  } catch {
+    toast.error('Erreur lors de l\'export CSV')
+  }
+}
+
+function getFieldValue(entry, field) {
+  return entry.data[field.label] ?? entry.data[field.name] ?? null
 }
 
 function fieldTypeIcon(type) {
   const map = { text: Type, textarea: AlignLeft, number: Hash, date: Calendar, select: List, checkbox: CheckSquare }
   return map[type] || Type
 }
+
+onMounted(async () => {
+  await fetchModule()
+  await fetchEntries()
+})
 </script>
 
 <template>
@@ -192,15 +250,15 @@ function fieldTypeIcon(type) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow v-for="(entry, idx) in filteredEntries" :key="entry.id" class="group hover:bg-muted/30">
+                <TableRow v-for="entry in filteredEntries" :key="entry.id" class="group hover:bg-muted/30">
                   <TableCell class="font-medium text-xs text-muted-foreground">{{ entry.id }}</TableCell>
                   <TableCell v-for="col in displayColumns" :key="col.id" class="text-sm">
                     <span v-if="col.type === 'checkbox'">
-                      <Badge :class="entry.data[col.label] ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'" class="text-[10px]">
-                        {{ entry.data[col.label] ? 'Oui' : 'Non' }}
+                      <Badge :class="getFieldValue(entry, col) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'" class="text-[10px]">
+                        {{ getFieldValue(entry, col) ? 'Oui' : 'Non' }}
                       </Badge>
                     </span>
-                    <span v-else class="line-clamp-1">{{ entry.data[col.label] || '—' }}</span>
+                    <span v-else class="line-clamp-1">{{ getFieldValue(entry, col) || '—' }}</span>
                   </TableCell>
                   <TableCell class="text-xs font-medium text-muted-foreground">{{ entry.submittedBy }}</TableCell>
                   <TableCell class="text-xs text-muted-foreground">{{ entry.submittedAt }}</TableCell>
@@ -335,11 +393,11 @@ function fieldTypeIcon(type) {
             <div v-for="field in currentModule.fields" :key="field.id" class="p-3 rounded-lg bg-slate-50 border">
               <p class="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">{{ field.label }}</p>
               <p v-if="field.type === 'checkbox'" class="text-sm font-medium">
-                <Badge :class="selectedEntry.data[field.label] ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">
-                  {{ selectedEntry.data[field.label] ? 'Oui' : 'Non' }}
+                <Badge :class="getFieldValue(selectedEntry, field) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">
+                  {{ getFieldValue(selectedEntry, field) ? 'Oui' : 'Non' }}
                 </Badge>
               </p>
-              <p v-else class="text-sm font-medium">{{ selectedEntry.data[field.label] || '—' }}</p>
+              <p v-else class="text-sm font-medium">{{ getFieldValue(selectedEntry, field) || '—' }}</p>
             </div>
           </div>
         </DialogContent>

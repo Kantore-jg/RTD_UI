@@ -1,35 +1,49 @@
 <script setup>
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import {
   Users, Briefcase, Wallet, TrendingUp, ArrowUpRight,
+  Calendar, ListChecks,
 } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { toast } from 'vue-sonner'
+import { dashboardService } from '@/services/dashboard'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const { user } = storeToRefs(authStore)
 
-const stats = [
-  { label: 'Employés actifs', value: '128', icon: Users, change: '+12%', color: 'text-blue-500', bg: 'bg-blue-500/10', link: '/employees' },
-  { label: 'Projets en cours', value: '14', icon: Briefcase, change: '+3', color: 'text-purple-500', bg: 'bg-purple-500/10', link: '/projects' },
-  { label: 'Trésorerie Mensuelle', value: '45.2M BIF', icon: Wallet, change: '+8.5%', color: 'text-emerald-500', bg: 'bg-emerald-500/10', link: '/finance' },
-  { label: 'Productivité', value: '94%', icon: TrendingUp, change: '+2%', color: 'text-orange-500', bg: 'bg-orange-500/10', link: '/tasks' },
-]
+const loading = ref(true)
+const stats = ref([])
+const projects = ref([])
+const activities = ref([])
 
-const projects = [
-  { name: 'Refonte ERP V2', progress: 75, status: 'Active', deadline: '15 Mai', border: 'border-l-blue-400' },
-  { name: 'Lancement Mobile App', progress: 42, status: 'Delay', deadline: '2 Juin', border: 'border-l-orange-400' },
-  { name: 'Audit Sécurité Biométrique', progress: 90, status: 'Active', deadline: '10 Mai', border: 'border-l-emerald-400' },
-]
+const iconMap = { Users, Briefcase, Wallet, TrendingUp }
 
-const activities = [
-  { user: 'Sarah L.', action: 'a terminé la tâche', target: 'Interface Dashboard', time: '12m', avatar: 'SL' },
-  { user: 'Marc K.', action: 'a créé un projet', target: 'Logistique Portuaire', time: '45m', avatar: 'MK' },
-  { user: 'Alice M.', action: 'a suggéré une idée', target: 'Boîte à suggestions', time: '2h', avatar: 'AM' },
-  { user: 'Système', action: 'Sauvegarde', target: 'Réussie', time: '4h', avatar: 'S' },
-]
+onMounted(async () => {
+  try {
+    const response = await dashboardService.get()
+    const data = response.data
+
+    stats.value = (data.stats || []).map(s => ({
+      ...s,
+      icon: iconMap[s.icon] || Briefcase,
+    }))
+    projects.value = data.projects || []
+    activities.value = data.activities || []
+  } catch (error) {
+    toast.error('Erreur lors du chargement du tableau de bord')
+  } finally {
+    loading.value = false
+  }
+})
 
 function goTo(path) {
   router.push(path)
@@ -41,7 +55,7 @@ function goTo(path) {
     <!-- Welcome -->
     <div class="flex flex-col md:flex-row justify-between items-end mb-6">
       <div>
-        <h1 class="text-2xl font-bold text-slate-900 leading-tight">Bonjour, Jean</h1>
+        <h1 class="text-2xl font-bold text-slate-900 leading-tight">Bonjour, {{ user?.name?.split(' ')[0] || 'Utilisateur' }}</h1>
         <p class="text-slate-500 font-medium">Voici ce qui se passe dans votre entreprise aujourd'hui.</p>
       </div>
       <div class="flex items-center gap-2 text-xs font-bold text-slate-400 bg-white px-4 py-2 border border-slate-200 rounded-lg uppercase tracking-wider">
@@ -50,8 +64,13 @@ function goTo(path) {
       </div>
     </div>
 
+    <!-- Loading -->
+    <div v-if="loading" class="flex items-center justify-center py-20">
+      <div class="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+    </div>
+
     <!-- Stats Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div v-if="!loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <div v-for="(stat, i) in stats" :key="i" class="cursor-pointer" @click="goTo(stat.link)">
         <Card class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm transition-all group relative hover:shadow-md hover:border-primary/20">
           <CardContent class="p-5">
@@ -74,7 +93,7 @@ function goTo(path) {
     </div>
 
     <!-- Main Grid -->
-    <div class="grid lg:grid-cols-3 gap-8">
+    <div v-if="!loading" class="grid lg:grid-cols-3 gap-8">
       <!-- Active Projects -->
       <Card class="lg:col-span-2 border border-slate-200 bg-white rounded-xl shadow-sm">
         <CardHeader>
@@ -89,7 +108,7 @@ function goTo(path) {
         <CardContent class="space-y-4">
           <div
             v-for="(project, i) in projects" :key="i"
-            :class="cn('p-4 rounded-lg bg-white border border-slate-100 shadow-sm space-y-4 transition-all cursor-pointer border-l-3 hover:shadow-md', project.border)"
+            :class="cn('p-4 rounded-lg bg-white border border-slate-100 shadow-sm space-y-3 transition-all cursor-pointer border-l-3 hover:shadow-md', project.border)"
             @click="goTo('/projects')"
           >
             <div class="flex justify-between items-center">
@@ -97,10 +116,13 @@ function goTo(path) {
               <Badge
                 :class="cn(
                   'text-[10px] font-bold uppercase tracking-wider',
-                  project.status === 'Delay' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                  project.isOverdue ? 'bg-orange-100 text-orange-700' :
+                  project.status === 'Urgent' ? 'bg-red-100 text-red-700' :
+                  project.status === 'En cours' ? 'bg-blue-100 text-blue-700' :
+                  'bg-slate-100 text-slate-700'
                 )"
               >
-                {{ project.status === 'Delay' ? 'EN RETARD' : 'ACTIF' }}
+                {{ project.isOverdue ? 'EN RETARD' : project.status }}
               </Badge>
             </div>
             <div class="space-y-2">
@@ -110,7 +132,32 @@ function goTo(path) {
               </div>
               <Progress :value="project.progress" class="h-1 bg-slate-100" />
             </div>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1">
+                <div v-if="project.members && project.members.length > 0" class="flex items-center -space-x-1.5">
+                  <Avatar
+                    v-for="member in project.members.slice(0, 4)" :key="member.id"
+                    class="h-6 w-6 border-2 border-white"
+                  >
+                    <AvatarFallback class="text-[9px] font-bold bg-slate-100 text-slate-600">{{ member.initials }}</AvatarFallback>
+                  </Avatar>
+                  <Avatar v-if="project.members.length > 4" class="h-6 w-6 border-2 border-white">
+                    <AvatarFallback class="text-[9px] font-bold bg-slate-200 text-slate-500">+{{ project.members.length - 4 }}</AvatarFallback>
+                  </Avatar>
+                </div>
+                <span v-else class="text-[10px] text-slate-400">Aucun membre</span>
+              </div>
+              <div class="flex items-center gap-3 text-[10px] text-slate-400 font-bold">
+                <span v-if="project.tasks_count !== undefined" class="flex items-center gap-1">
+                  <ListChecks class="w-3 h-3" />{{ project.tasks_count }}
+                </span>
+                <span v-if="project.deadline" class="flex items-center gap-1">
+                  <Calendar class="w-3 h-3" />{{ project.deadline }}
+                </span>
+              </div>
+            </div>
           </div>
+          <div v-if="projects.length === 0" class="text-center py-8 text-slate-400 text-sm">Aucun projet actif</div>
         </CardContent>
       </Card>
 
@@ -129,7 +176,7 @@ function goTo(path) {
               <p class="text-xs font-medium text-slate-600">
                 <span class="font-bold text-slate-900">{{ activity.user }}</span> {{ activity.action }} <span class="text-primary font-bold">{{ activity.target }}</span>
               </p>
-              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Il y a {{ activity.time }}</p>
+              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest"> {{ activity.time }}</p>
             </div>
           </div>
           <Button variant="outline" class="w-full text-[10px] font-bold uppercase tracking-widest" @click="goTo('/tasks')">

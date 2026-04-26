@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { cn } from '@/lib/utils'
 import {
   Wallet, ArrowUpCircle, ArrowDownCircle, TrendingUp,
@@ -17,32 +17,113 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from 'vue-sonner'
+import { financeService, companyPaymentService, paymentMethodService } from '@/services/finance'
 
-const records = ref([
-  { id: 1, date: '2026-04-20', description: 'Paiement fournisseur — Matières premières', type: 'Dépense', montant: 1250000, statut: 'Validé' },
-  { id: 2, date: '2026-04-18', description: 'Facture client — Projet ERP', type: 'Revenu', montant: 3400000, statut: 'Encaissé' },
-  { id: 3, date: '2026-04-15', description: 'Salaires — Avril 2026', type: 'Dépense', montant: 2100000, statut: 'Validé' },
-  { id: 4, date: '2026-04-12', description: 'Subvention gouvernementale', type: 'Revenu', montant: 800000, statut: 'En attente' },
-  { id: 5, date: '2026-04-10', description: 'Maintenance serveurs — Q2', type: 'Dépense', montant: 350000, statut: 'Validé' },
-])
-
-const companyPayments = ref([
-  { id: 1, date: '2026-04-20', description: 'Paiement abonnement plateforme RDT', montant: 500000, receipt: 'recu_avril_2026.jpg', account: 'BANCOBU - 10045678', statut: 'Validé' },
-  { id: 2, date: '2026-03-20', description: 'Paiement abonnement plateforme RDT', montant: 500000, receipt: 'recu_mars_2026.jpg', account: 'BANCOBU - 10045678', statut: 'Validé' },
-  { id: 3, date: '2026-05-01', description: 'Paiement abonnement plateforme RDT', montant: 500000, receipt: '', account: '', statut: 'En attente' },
-])
+const loading = ref(false)
+const records = ref([])
+const companyPayments = ref([])
+const paymentMethods = ref([])
+const summary = ref({ revenues: 0, expenses: 0 })
 
 const searchTerm = ref('')
 const activeTab = ref('caisse')
 const showAddOperation = ref(false)
 const showAddPayment = ref(false)
+const showReceiptPreview = ref(false)
+const previewReceiptUrl = ref('')
+
+const receiptFile = ref(null)
+const receiptPreviewUrl = ref(null)
+const fileInputRef = ref(null)
 
 const newOperation = ref({
   description: '', type: 'Revenu', montant: '', date: new Date().toISOString().split('T')[0],
 })
 
 const newPayment = ref({
-  date: new Date().toISOString().split('T')[0], montant: '', receipt: '', account: '', description: 'Paiement abonnement plateforme RDT',
+  date: new Date().toISOString().split('T')[0], montant: '', payment_method_id: '', description: '',
+})
+
+async function fetchRecords() {
+  try {
+    loading.value = true
+    const response = await financeService.list()
+    records.value = response.data.data || response.data
+  } catch (err) {
+    toast.error('Erreur lors du chargement des opérations')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchCompanyPayments() {
+  try {
+    const response = await companyPaymentService.list()
+    companyPayments.value = response.data.data || response.data
+  } catch (err) {
+    toast.error('Erreur lors du chargement des paiements')
+  }
+}
+
+async function fetchSummary() {
+  try {
+    const response = await financeService.summary()
+    summary.value = response.data.data || response.data
+  } catch {
+    // Fallback: compute from records
+  }
+}
+
+async function fetchPaymentMethods() {
+  try {
+    const response = await paymentMethodService.list()
+    paymentMethods.value = response.data.data || response.data || []
+  } catch {
+    // Non-blocking
+  }
+}
+
+function handleReceiptSelect(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    toast.error('Veuillez sélectionner une image (JPG, PNG, etc.)')
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error('L\'image ne doit pas dépasser 5 Mo')
+    return
+  }
+  receiptFile.value = file
+  receiptPreviewUrl.value = URL.createObjectURL(file)
+}
+
+function removeReceipt() {
+  receiptFile.value = null
+  receiptPreviewUrl.value = null
+  if (fileInputRef.value) fileInputRef.value.value = ''
+}
+
+function viewReceipt(url) {
+  previewReceiptUrl.value = url
+  showReceiptPreview.value = true
+}
+
+function getPaymentMethodLabel(payment) {
+  const method = payment.payment_method
+  if (method) return `${method.bank_name} - ${method.account_number}`
+  return payment.account || '—'
+}
+
+function getReceiptUrl(receipt) {
+  if (!receipt) return null
+  if (receipt.startsWith('http')) return receipt
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+  return `${apiBase.replace('/api', '')}/storage/${receipt}`
+}
+
+onMounted(async () => {
+  await Promise.all([fetchRecords(), fetchCompanyPayments(), fetchSummary(), fetchPaymentMethods()])
 })
 
 const filteredRecords = computed(() => {
@@ -52,8 +133,8 @@ const filteredRecords = computed(() => {
 })
 
 const summaryCards = computed(() => {
-  const revenues = records.value.filter(r => r.type === 'Revenu').reduce((sum, r) => sum + r.montant, 0)
-  const expenses = records.value.filter(r => r.type === 'Dépense').reduce((sum, r) => sum + r.montant, 0)
+  const revenues = summary.value.revenues ?? records.value.filter(r => r.type === 'Revenu').reduce((sum, r) => sum + r.montant, 0)
+  const expenses = summary.value.expenses ?? records.value.filter(r => r.type === 'Dépense').reduce((sum, r) => sum + r.montant, 0)
   return [
     { title: 'Entrées', value: revenues.toLocaleString('fr-FR') + ' BIF', icon: ArrowUpCircle, description: 'Total des revenus', color: 'text-emerald-600' },
     { title: 'Sorties', value: expenses.toLocaleString('fr-FR') + ' BIF', icon: ArrowDownCircle, description: 'Total des dépenses', color: 'text-red-600' },
@@ -79,53 +160,85 @@ function statutVariant(statut) {
   }
 }
 
-let nextId = 6
-
-function addOperation() {
+async function addOperation() {
   if (!newOperation.value.description || !newOperation.value.montant) {
     toast.error('Veuillez remplir tous les champs obligatoires')
     return
   }
-  records.value.unshift({
-    id: nextId++,
-    date: newOperation.value.date,
-    description: newOperation.value.description,
-    type: newOperation.value.type,
-    montant: parseInt(newOperation.value.montant),
-    statut: 'En attente',
-  })
-  newOperation.value = { description: '', type: 'Revenu', montant: '', date: new Date().toISOString().split('T')[0] }
-  showAddOperation.value = false
-  toast.success('Opération enregistrée')
+  try {
+    await financeService.create({
+      date: newOperation.value.date,
+      description: newOperation.value.description,
+      type: newOperation.value.type,
+      montant: parseInt(newOperation.value.montant),
+    })
+    newOperation.value = { description: '', type: 'Revenu', montant: '', date: new Date().toISOString().split('T')[0] }
+    showAddOperation.value = false
+    toast.success('Opération enregistrée')
+    await Promise.all([fetchRecords(), fetchSummary()])
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de l\'enregistrement')
+  }
 }
 
-function addPayment() {
+async function addPayment() {
   if (!newPayment.value.montant) {
     toast.error('Veuillez indiquer le montant')
     return
   }
-  companyPayments.value.unshift({
-    id: companyPayments.value.length + 1,
-    date: newPayment.value.date,
-    description: newPayment.value.description,
-    montant: parseInt(newPayment.value.montant),
-    receipt: newPayment.value.receipt,
-    account: newPayment.value.account,
-    statut: 'En attente',
-  })
-  newPayment.value = { date: new Date().toISOString().split('T')[0], montant: '', receipt: '', account: '', description: 'Paiement abonnement plateforme RDT' }
-  showAddPayment.value = false
-  toast.success('Paiement enregistré, en attente de validation par l\'admin')
+  if (!newPayment.value.payment_method_id) {
+    toast.error('Veuillez sélectionner un moyen de paiement')
+    return
+  }
+  try {
+    const formData = new FormData()
+    formData.append('date', newPayment.value.date)
+    formData.append('montant', parseInt(newPayment.value.montant))
+    formData.append('payment_method_id', newPayment.value.payment_method_id)
+    if (newPayment.value.description) {
+      formData.append('description', newPayment.value.description)
+    }
+    if (receiptFile.value) {
+      formData.append('receipt', receiptFile.value)
+    }
+
+    await companyPaymentService.create(formData)
+    newPayment.value = { date: new Date().toISOString().split('T')[0], montant: '', payment_method_id: '', description: '' }
+    removeReceipt()
+    showAddPayment.value = false
+    toast.success('Paiement enregistré, en attente de validation par l\'admin')
+    await fetchCompanyPayments()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de l\'enregistrement du paiement')
+  }
 }
 
-function deleteRecord(id) {
-  records.value = records.value.filter(r => r.id !== id)
-  toast.success('Opération supprimée')
+async function deleteRecord(id) {
+  try {
+    await financeService.delete(id)
+    toast.success('Opération supprimée')
+    await Promise.all([fetchRecords(), fetchSummary()])
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la suppression')
+  }
 }
 
-function exportPDF() {
-  toast.info('Rapport PDF en cours de génération...')
-  setTimeout(() => toast.success('Rapport PDF prêt au téléchargement'), 1500)
+async function exportPDF() {
+  try {
+    toast.info('Rapport PDF en cours de génération...')
+    const csvData = [
+      ['Date', 'Description', 'Type', 'Montant', 'Statut'],
+      ...records.value.map(r => [r.date, r.description, r.type, r.montant, r.statut || '']),
+    ].map(row => row.join(',')).join('\n')
+    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `rapport_finance_${new Date().toISOString().split('T')[0]}.csv`
+    link.click()
+    toast.success('Rapport téléchargé')
+  } catch {
+    toast.error('Erreur lors de la génération du rapport')
+  }
 }
 </script>
 
@@ -273,7 +386,7 @@ function exportPDF() {
                 Enregistrer un paiement
               </Button>
             </DialogTrigger>
-            <DialogContent class="sm:max-w-[450px]">
+            <DialogContent class="sm:max-w-[500px]">
               <DialogHeader>
                 <DialogTitle>Enregistrer un Paiement</DialogTitle>
                 <DialogDescription>Enregistrez votre paiement. L'admin validera après vérification du reçu.</DialogDescription>
@@ -290,13 +403,52 @@ function exportPDF() {
                   </div>
                 </div>
                 <div class="space-y-2">
-                  <Label class="text-xs font-bold uppercase text-slate-500">Reçu (image)</Label>
-                  <Input v-model="newPayment.receipt" placeholder="nom_du_fichier.jpg" />
-                  <p class="text-[10px] text-slate-400">Entrez le nom du fichier reçu ou uploadez-le</p>
+                  <Label class="text-xs font-bold uppercase text-slate-500">Compte utilisé pour payer *</Label>
+                  <select
+                    v-model="newPayment.payment_method_id"
+                    class="w-full h-10 px-3 rounded-md border border-slate-200 text-sm bg-white"
+                  >
+                    <option value="" disabled>Sélectionner un moyen de paiement...</option>
+                    <option v-for="method in paymentMethods" :key="method.id" :value="method.id">
+                      {{ method.bank_name }} — {{ method.account_number }} ({{ method.type }})
+                    </option>
+                  </select>
+                  <p v-if="paymentMethods.length === 0" class="text-[10px] text-orange-500">Aucun moyen de paiement disponible. Contactez l'administrateur.</p>
                 </div>
                 <div class="space-y-2">
-                  <Label class="text-xs font-bold uppercase text-slate-500">Compte utilisé</Label>
-                  <Input v-model="newPayment.account" placeholder="Ex: BANCOBU - 10045678" />
+                  <Label class="text-xs font-bold uppercase text-slate-500">Reçu de paiement (image)</Label>
+                  <div v-if="!receiptFile" class="relative">
+                    <input
+                      ref="fileInputRef"
+                      type="file"
+                      accept="image/*"
+                      class="hidden"
+                      @change="handleReceiptSelect"
+                    />
+                    <div
+                      class="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
+                      @click="fileInputRef?.click()"
+                    >
+                      <Upload class="w-8 h-8 text-slate-400" />
+                      <span class="text-sm text-slate-500 font-medium">Cliquez pour uploader le reçu</span>
+                      <span class="text-[10px] text-slate-400">JPG, PNG — Max 5 Mo</span>
+                    </div>
+                  </div>
+                  <div v-else class="relative border rounded-lg overflow-hidden">
+                    <img :src="receiptPreviewUrl" alt="Aperçu du reçu" class="w-full h-40 object-cover" />
+                    <div class="absolute top-2 right-2">
+                      <Button size="icon" variant="destructive" class="h-7 w-7" @click="removeReceipt">
+                        <Trash2 class="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                    <div class="px-3 py-2 bg-slate-50 border-t text-xs text-slate-600 font-medium truncate">
+                      {{ receiptFile.name }} ({{ (receiptFile.size / 1024).toFixed(0) }} Ko)
+                    </div>
+                  </div>
+                </div>
+                <div class="space-y-2">
+                  <Label class="text-xs font-bold uppercase text-slate-500">Description (optionnel)</Label>
+                  <Input v-model="newPayment.description" placeholder="Ex: Paiement abonnement avril 2026" />
                 </div>
               </div>
               <div class="flex justify-end gap-2">
@@ -327,14 +479,18 @@ function exportPDF() {
                 <TableRow v-for="payment in companyPayments" :key="payment.id">
                   <TableCell class="font-medium">{{ payment.date }}</TableCell>
                   <TableCell>{{ payment.description }}</TableCell>
-                  <TableCell class="font-bold">{{ payment.montant.toLocaleString('fr-FR') }} BIF</TableCell>
+                  <TableCell class="font-bold">{{ Number(payment.montant).toLocaleString('fr-FR') }} BIF</TableCell>
                   <TableCell>
-                    <Badge v-if="payment.receipt" variant="outline" class="text-[10px]">
-                      <FileText class="w-3 h-3 mr-1" />{{ payment.receipt }}
-                    </Badge>
+                    <button
+                      v-if="payment.receipt"
+                      class="flex items-center gap-1 text-primary hover:underline text-xs font-medium"
+                      @click="viewReceipt(getReceiptUrl(payment.receipt))"
+                    >
+                      <FileText class="w-3 h-3" />Voir le reçu
+                    </button>
                     <span v-else class="text-xs text-slate-400">Aucun</span>
                   </TableCell>
-                  <TableCell class="text-xs text-slate-500">{{ payment.account || '—' }}</TableCell>
+                  <TableCell class="text-xs text-slate-600 font-medium">{{ getPaymentMethodLabel(payment) }}</TableCell>
                   <TableCell>
                     <Badge :variant="statutVariant(payment.statut)">
                       <component :is="payment.statut === 'Validé' ? CheckCircle2 : Clock" class="w-3 h-3 mr-1" />
@@ -348,5 +504,21 @@ function exportPDF() {
         </Card>
       </TabsContent>
     </Tabs>
+
+    <!-- Receipt Preview Dialog -->
+    <Dialog v-model:open="showReceiptPreview">
+      <DialogContent class="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>Reçu de paiement</DialogTitle>
+          <DialogDescription>Aperçu du reçu uploadé</DialogDescription>
+        </DialogHeader>
+        <div class="py-4">
+          <img :src="previewReceiptUrl" alt="Reçu de paiement" class="w-full rounded-lg border" />
+        </div>
+        <div class="flex justify-end">
+          <Button variant="outline" @click="showReceiptPreview = false">Fermer</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

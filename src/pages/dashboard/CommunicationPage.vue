@@ -1,11 +1,11 @@
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
-  MessageSquare, Send, Search, Users, Megaphone, Hash,
-  AtSign, Plus, MoreVertical, Paperclip, Smile, Pin,
-  Lightbulb, Mail, X,
+  MessageSquare, Send, Search, Megaphone, Hash,
+  Plus, MoreVertical, Paperclip, Smile,
+  Lightbulb, X,
 } from 'lucide-vue-next'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,7 +15,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuTrigger,
@@ -24,135 +24,211 @@ import { cn } from '@/lib/utils'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
+import { channelService, suggestionService } from '@/services/communication'
 
 const authStore = useAuthStore()
 const { user, isAdmin, isEmployee } = storeToRefs(authStore)
 
-const channels = ref([
-  { id: '1', name: 'général', type: 'PUBLIC', unread: 0 },
-  { id: '2', name: 'annonces-officielles', type: 'ANNOUNCEMENT', unread: 2 },
-  { id: '3', name: 'projet-erp-v2', type: 'PRIVATE', unread: 15 },
-  { id: '4', name: 'design-feedback', type: 'PUBLIC', unread: 0 },
-  { id: '5', name: 'marketing-team', type: 'PRIVATE', unread: 5 },
-])
+const channels = ref([])
+const currentMessages = ref([])
+const suggestions = ref([])
+const loading = ref(false)
+const loadingMessages = ref(false)
+const loadingSuggestions = ref(false)
 
-const allMessages = ref({
-  '1': [
-    { id: '1', user: 'Jean Dupont', text: "Bonjour à tous ! N'oubliez pas la réunion de demain à 10h.", time: '09:30', avatar: 'JD', self: false },
-    { id: '2', user: 'Sarah Lawson', text: "C'est noté Jean. Je préparerai les slides.", time: '09:45', avatar: 'SL', self: false },
-    { id: '3', user: 'Moi', text: "Parfait, je serai présent également.", time: '10:05', avatar: 'ME', self: true },
-    { id: '4', user: 'Marc Kasongo', text: "Le nouveau module de builder est presque prêt. Des volontaires pour tester ?", time: '10:30', avatar: 'MK', self: false },
-  ],
-  '2': [
-    { id: '1', user: 'Direction', text: "📢 Nouveau : La plateforme RDT est maintenant accessible sur mobile !", time: '08:00', avatar: 'DR', self: false },
-    { id: '2', user: 'Direction', text: "Rappel : Mise à jour des profils employés avant le 30 avril.", time: '14:00', avatar: 'DR', self: false },
-  ],
-  '3': [
-    { id: '1', user: 'Marc Kouassi', text: "L'API est prête pour les tests d'intégration.", time: '11:00', avatar: 'MK', self: false },
-  ],
-  '4': [],
-  '5': [
-    { id: '1', user: 'Sarah Lawson', text: "Nouveau brief marketing pour la campagne Q3.", time: '15:00', avatar: 'SL', self: false },
-  ],
-})
-
-const suggestions = ref([
-  { id: 1, author: 'Alice Mensah', text: 'Proposer un mode sombre pour l\'interface employé', date: '2026-04-22', votes: 5, status: 'open' },
-  { id: 2, author: 'Paul Atreides', text: 'Ajouter un système de notifications push pour les tâches urgentes', date: '2026-04-20', votes: 12, status: 'open' },
-  { id: 3, author: 'Marc Kouassi', text: 'Permettre l\'export des rapports en format Excel', date: '2026-04-18', votes: 8, status: 'implemented' },
-])
-
-const selectedChannelId = ref('1')
+const selectedChannelId = ref(null)
 const message = ref('')
 const activeView = ref('chat')
 const showNewSuggestion = ref(false)
 const newSuggestion = ref('')
 const sidebarSearchTerm = ref('')
 
+const showNewChannel = ref(false)
+const newChannel = ref({ name: '', type: 'PUBLIC' })
+
 const selectedChannel = computed(() =>
   channels.value.find(c => c.id === selectedChannelId.value)
 )
 
-const currentMessages = computed(() =>
-  allMessages.value[selectedChannelId.value] || []
-)
+const filteredChannels = computed(() => {
+  if (!sidebarSearchTerm.value) return channels.value
+  const term = sidebarSearchTerm.value.toLowerCase()
+  return channels.value.filter(c => c.name.toLowerCase().includes(term))
+})
 
 const announcementChannels = computed(() =>
-  channels.value.filter(c => c.type === 'ANNOUNCEMENT')
+  filteredChannels.value.filter(c => c.type === 'ANNOUNCEMENT')
 )
 
 const regularChannels = computed(() =>
-  channels.value.filter(c => c.type !== 'ANNOUNCEMENT')
+  filteredChannels.value.filter(c => c.type !== 'ANNOUNCEMENT')
 )
 
-const directUsers = [
-  { name: 'Sarah Lawson', status: 'online' },
-  { name: 'Marc Kasongo', status: 'away' },
-  { name: 'Alice Mboma', status: 'online' },
-  { name: 'Kevin Durant', status: 'offline' },
-]
+const filteredSuggestions = computed(() => {
+  if (isAdmin.value) return suggestions.value
+  const userId = user.value?.id
+  const userName = user.value?.name
+  return suggestions.value.filter(s =>
+    s.user_id === userId || s.user?.id === userId || s.author === userName
+  )
+})
 
 function getInitials(name) {
   return name.split(' ').map(n => n[0]).join('')
 }
 
-function selectChannel(channelId) {
+async function fetchChannels() {
+  loading.value = true
+  try {
+    const { data } = await channelService.list()
+    channels.value = data.data ?? data
+    if (channels.value.length && !selectedChannelId.value) {
+      await selectChannel(channels.value[0].id)
+    }
+  } catch {
+    toast.error('Erreur lors du chargement des canaux')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchMessages(channelId) {
+  loadingMessages.value = true
+  try {
+    const { data } = await channelService.getMessages(channelId)
+    const msgs = data.data ?? data
+    currentMessages.value = msgs.map(m => ({
+      id: m.id,
+      user: m.user?.name ?? 'Inconnu',
+      text: m.text,
+      time: new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      avatar: getInitials(m.user?.name ?? 'IN'),
+      self: m.user?.id === user.value?.id,
+    }))
+    scrollToBottom()
+  } catch {
+    toast.error('Erreur lors du chargement des messages')
+  } finally {
+    loadingMessages.value = false
+  }
+}
+
+async function fetchSuggestions() {
+  loadingSuggestions.value = true
+  try {
+    const { data } = await suggestionService.list()
+    const raw = data.data ?? data
+    suggestions.value = (Array.isArray(raw) ? raw : []).map(s => ({
+      ...s,
+      author: s.user?.name || s.author || 'Anonyme',
+      date: s.created_at ? new Date(s.created_at).toLocaleDateString('fr-FR') : s.date || '',
+    }))
+  } catch {
+    toast.error('Erreur lors du chargement des suggestions')
+  } finally {
+    loadingSuggestions.value = false
+  }
+}
+
+async function selectChannel(channelId) {
   selectedChannelId.value = channelId
   const channel = channels.value.find(c => c.id === channelId)
   if (channel) channel.unread = 0
+  await fetchMessages(channelId)
 }
 
-let nextMsgId = 10
-
-function sendMessage() {
-  if (!message.value.trim()) return
-  if (!allMessages.value[selectedChannelId.value]) {
-    allMessages.value[selectedChannelId.value] = []
+async function sendMessage() {
+  if (!message.value.trim() || !selectedChannelId.value) return
+  try {
+    await channelService.sendMessage(selectedChannelId.value, message.value)
+    message.value = ''
+    await fetchMessages(selectedChannelId.value)
+    scrollToBottom()
+  } catch {
+    toast.error('Erreur lors de l\'envoi du message')
   }
-  allMessages.value[selectedChannelId.value].push({
-    id: String(nextMsgId++),
-    user: 'Moi',
-    text: message.value,
-    time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-    avatar: 'ME',
-    self: true,
-  })
-  message.value = ''
 }
 
-const filteredSuggestions = computed(() => {
-  if (isAdmin.value) return suggestions.value
-  const userName = user.value?.name || 'Moi'
-  return suggestions.value.filter(s => s.author === userName || s.author === 'Moi')
-})
+async function createChannel() {
+  if (!newChannel.value.name.trim()) {
+    toast.error('Le nom du canal est obligatoire')
+    return
+  }
+  try {
+    await channelService.create({
+      name: newChannel.value.name,
+      type: newChannel.value.type,
+    })
+    newChannel.value = { name: '', type: 'PUBLIC' }
+    showNewChannel.value = false
+    toast.success('Canal créé')
+    await fetchChannels()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la création du canal')
+  }
+}
 
-function addSuggestion() {
+async function deleteChannel(channelId) {
+  try {
+    await channelService.delete(channelId)
+    toast.success('Canal supprimé')
+    if (selectedChannelId.value === channelId) {
+      selectedChannelId.value = null
+      currentMessages.value = []
+    }
+    await fetchChannels()
+  } catch {
+    toast.error('Erreur lors de la suppression du canal')
+  }
+}
+
+function scrollToBottom() {
+  setTimeout(() => {
+    const scrollEl = document.querySelector('.chat-scroll-area [data-radix-scroll-area-viewport]')
+    if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight
+  }, 100)
+}
+
+async function addSuggestion() {
   if (!newSuggestion.value.trim()) {
     toast.error('Écrivez votre suggestion')
     return
   }
-  suggestions.value.unshift({
-    id: suggestions.value.length + 1,
-    author: user.value?.name || 'Moi',
-    text: newSuggestion.value,
-    date: new Date().toISOString().split('T')[0],
-    votes: 0,
-    status: 'open',
-  })
-  newSuggestion.value = ''
-  showNewSuggestion.value = false
-  toast.success('Suggestion envoyée')
+  try {
+    await suggestionService.create({ text: newSuggestion.value })
+    newSuggestion.value = ''
+    showNewSuggestion.value = false
+    toast.success('Suggestion envoyée')
+    await fetchSuggestions()
+  } catch {
+    toast.error('Erreur lors de l\'envoi de la suggestion')
+  }
 }
 
-function voteSuggestion(suggestion) {
-  suggestion.votes++
-  toast.success('Vote enregistré')
+async function voteSuggestion(suggestion) {
+  try {
+    await suggestionService.vote(suggestion.id)
+    toast.success('Vote enregistré')
+    await fetchSuggestions()
+  } catch {
+    toast.error('Erreur lors du vote')
+  }
 }
 
-function updateSuggestionStatus(suggestion, status) {
-  suggestion.status = status
-  toast.success(`Suggestion marquée comme "${status === 'implemented' ? 'Implémenté' : status === 'rejected' ? 'Rejeté' : 'Ouvert'}"`)
+async function updateSuggestionStatus(suggestion, status) {
+  try {
+    await suggestionService.updateStatus(suggestion.id, status)
+    toast.success(`Suggestion marquée comme "${status === 'implemented' ? 'Implémenté' : status === 'rejected' ? 'Rejeté' : 'Ouvert'}"`)
+    await fetchSuggestions()
+  } catch {
+    toast.error('Erreur lors de la mise à jour du statut')
+  }
 }
+
+onMounted(() => {
+  fetchChannels()
+  fetchSuggestions()
+})
 </script>
 
 <template>
@@ -179,6 +255,37 @@ function updateSuggestionStatus(suggestion, status) {
           <CardHeader class="py-4 px-4 border-b">
             <div class="flex justify-between items-center">
               <CardTitle class="text-lg font-black tracking-tight">Communication</CardTitle>
+              <Dialog v-if="isAdmin" v-model:open="showNewChannel">
+                <DialogTrigger as-child>
+                  <Button variant="ghost" size="icon" class="h-8 w-8">
+                    <Plus class="w-4 h-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent class="sm:max-w-[400px]">
+                  <DialogHeader>
+                    <DialogTitle>Nouveau Canal</DialogTitle>
+                    <DialogDescription>Créez un canal de communication.</DialogDescription>
+                  </DialogHeader>
+                  <div class="grid gap-4 py-4">
+                    <div class="space-y-2">
+                      <Label class="text-xs font-bold uppercase text-slate-500">Nom du canal *</Label>
+                      <Input v-model="newChannel.name" placeholder="Ex: Marketing, Projets..." />
+                    </div>
+                    <div class="space-y-2">
+                      <Label class="text-xs font-bold uppercase text-slate-500">Type</Label>
+                      <select v-model="newChannel.type" class="w-full h-10 px-3 rounded-md border border-slate-200 text-sm bg-white">
+                        <option value="PUBLIC">Public</option>
+                        <option value="ANNOUNCEMENT">Annonces</option>
+                        <option value="PRIVATE">Privé</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="flex justify-end gap-2">
+                    <Button variant="outline" @click="showNewChannel = false">Annuler</Button>
+                    <Button @click="createChannel">Créer</Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
             <div class="relative mt-2">
               <Search class="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
@@ -188,15 +295,15 @@ function updateSuggestionStatus(suggestion, status) {
           <ScrollArea class="flex-1 p-2">
             <div class="space-y-6">
               <!-- Announcements -->
-              <div>
+              <div v-if="announcementChannels.length > 0">
                 <h3 class="px-2 text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-2 flex items-center gap-2">
                   <Megaphone class="w-3 h-3" />Annonces
                 </h3>
                 <div class="space-y-1">
-                  <button
+                  <div
                     v-for="c in announcementChannels" :key="c.id"
                     :class="cn(
-                      'w-full flex justify-between items-center px-3 py-2 rounded-lg hover:bg-muted font-bold text-sm group transition-all',
+                      'w-full flex justify-between items-center px-3 py-2 rounded-lg hover:bg-muted font-bold text-sm group transition-all cursor-pointer',
                       selectedChannelId === c.id && 'bg-primary/10 text-primary'
                     )"
                     @click="selectChannel(c.id)"
@@ -204,8 +311,13 @@ function updateSuggestionStatus(suggestion, status) {
                     <span class="flex items-center gap-2">
                       <Megaphone class="w-3.5 h-3.5 text-primary" />{{ c.name }}
                     </span>
-                    <Badge v-if="c.unread > 0" class="h-4 min-w-4 px-1 flex items-center justify-center text-[10px] bg-primary">{{ c.unread }}</Badge>
-                  </button>
+                    <div class="flex items-center gap-1">
+                      <Badge v-if="c.messages_count" variant="secondary" class="h-4 min-w-4 px-1 flex items-center justify-center text-[10px]">{{ c.messages_count }}</Badge>
+                      <Button v-if="isAdmin" variant="ghost" size="icon" class="h-6 w-6 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600" @click.stop="deleteChannel(c.id)">
+                        <X class="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
               <!-- Channels -->
@@ -214,10 +326,10 @@ function updateSuggestionStatus(suggestion, status) {
                   <Hash class="w-3 h-3" />Canaux
                 </h3>
                 <div class="space-y-1">
-                  <button
+                  <div
                     v-for="c in regularChannels" :key="c.id"
                     :class="cn(
-                      'w-full flex justify-between items-center px-3 py-2 rounded-lg hover:bg-muted font-bold text-sm group transition-all',
+                      'w-full flex justify-between items-center px-3 py-2 rounded-lg hover:bg-muted font-bold text-sm group transition-all cursor-pointer',
                       selectedChannelId === c.id && 'bg-primary/10 text-primary'
                     )"
                     @click="selectChannel(c.id)"
@@ -225,33 +337,16 @@ function updateSuggestionStatus(suggestion, status) {
                     <span class="flex items-center gap-2 text-muted-foreground group-hover:text-foreground">
                       <Hash class="w-4 h-4" />{{ c.name }}
                     </span>
-                    <Badge v-if="c.unread > 0" class="h-4 min-w-4 px-1 flex items-center justify-center text-[10px] bg-red-500">{{ c.unread }}</Badge>
-                  </button>
-                </div>
-              </div>
-              <!-- DMs -->
-              <div>
-                <h3 class="px-2 text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-2 flex items-center gap-2">
-                  <Users class="w-3 h-3" />Messages Directs
-                </h3>
-                <div class="space-y-1">
-                  <button
-                    v-for="(user, i) in directUsers" :key="i"
-                    class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted font-bold text-sm transition-all group"
-                  >
-                    <div class="relative">
-                      <Avatar class="w-8 h-8 border-2 group-hover:border-primary/20 transition-all">
-                        <AvatarFallback class="text-[10px] font-black">{{ getInitials(user.name) }}</AvatarFallback>
-                      </Avatar>
-                      <div
-                        :class="cn(
-                          'absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background',
-                          user.status === 'online' ? 'bg-emerald-500' : user.status === 'away' ? 'bg-orange-500' : 'bg-muted-foreground'
-                        )"
-                      />
+                    <div class="flex items-center gap-1">
+                      <Badge v-if="c.messages_count" variant="secondary" class="h-4 min-w-4 px-1 flex items-center justify-center text-[10px]">{{ c.messages_count }}</Badge>
+                      <Button v-if="isAdmin" variant="ghost" size="icon" class="h-6 w-6 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600" @click.stop="deleteChannel(c.id)">
+                        <X class="w-3 h-3" />
+                      </Button>
                     </div>
-                    <span class="text-muted-foreground group-hover:text-foreground truncate">{{ user.name }}</span>
-                  </button>
+                  </div>
+                  <div v-if="regularChannels.length === 0 && announcementChannels.length === 0" class="px-3 py-6 text-center text-xs text-muted-foreground">
+                    Aucun canal trouvé
+                  </div>
                 </div>
               </div>
             </div>
@@ -261,94 +356,112 @@ function updateSuggestionStatus(suggestion, status) {
 
       <!-- Main Chat Area -->
       <Card class="flex-1 border-2 overflow-hidden flex flex-col rounded-3xl h-full shadow-2xl relative">
-        <CardHeader class="py-3 px-6 border-b flex flex-row justify-between items-center shrink-0">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
-              <Hash class="w-5 h-5" />
-            </div>
-            <div>
-              <CardTitle class="text-lg font-black tracking-tight flex items-center gap-2">
-                {{ selectedChannel?.name || 'général' }}
-                <Badge variant="outline" class="text-[9px] font-black tracking-widest uppercase border-primary/20 text-primary">
-                  {{ selectedChannel?.type === 'ANNOUNCEMENT' ? 'Annonce' : selectedChannel?.type === 'PRIVATE' ? 'Privé' : 'Public' }}
-                </Badge>
-              </CardTitle>
-            </div>
-          </div>
-        </CardHeader>
-
-        <div class="flex-1 overflow-hidden flex flex-col bg-muted/5 relative">
-          <ScrollArea class="flex-1 p-6">
-            <div class="space-y-8">
-              <div class="flex flex-col items-center justify-center py-8 text-center space-y-4">
-                <div class="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center border-2 border-dashed border-primary/20">
-                  <MessageSquare class="w-8 h-8 text-primary/30" />
-                </div>
-                <div class="space-y-1">
-                  <h4 class="font-extrabold text-lg">Canal #{{ selectedChannel?.name }}</h4>
-                  <p class="text-xs text-muted-foreground max-w-xs mx-auto">Début de la conversation.</p>
-                </div>
-                <hr class="w-full border-muted-foreground/10" />
+        <template v-if="selectedChannel">
+          <CardHeader class="py-3 px-6 border-b flex flex-row justify-between items-center shrink-0">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
+                <component :is="selectedChannel.type === 'ANNOUNCEMENT' ? Megaphone : Hash" class="w-5 h-5" />
               </div>
+              <div>
+                <CardTitle class="text-lg font-black tracking-tight flex items-center gap-2">
+                  {{ selectedChannel.name }}
+                  <Badge variant="outline" class="text-[9px] font-black tracking-widest uppercase border-primary/20 text-primary">
+                    {{ selectedChannel.type === 'ANNOUNCEMENT' ? 'Annonce' : selectedChannel.type === 'PRIVATE' ? 'Privé' : 'Public' }}
+                  </Badge>
+                </CardTitle>
+              </div>
+            </div>
+          </CardHeader>
 
-              <div
-                v-for="msg in currentMessages" :key="msg.id"
-                :class="cn('flex gap-3 px-2 group transition-all', msg.self ? 'flex-row-reverse' : '')"
-              >
-                <Avatar class="w-9 h-9 border-2 mt-1 shadow-sm">
-                  <AvatarFallback class="text-[10px] font-black bg-muted">{{ msg.avatar }}</AvatarFallback>
-                </Avatar>
-                <div :class="cn('flex flex-col space-y-1 max-w-[70%]', msg.self ? 'items-end' : 'items-start')">
-                  <div :class="cn('flex items-center gap-2 text-xs font-black uppercase tracking-tighter text-muted-foreground', msg.self && 'flex-row-reverse')">
-                    <span>{{ msg.user }}</span>
-                    <span class="text-[9px] font-medium tracking-normal">• {{ msg.time }}</span>
+          <div class="flex-1 overflow-hidden flex flex-col bg-muted/5 relative">
+            <ScrollArea class="flex-1 p-6 chat-scroll-area">
+              <div class="space-y-8">
+                <div v-if="currentMessages.length === 0 && !loadingMessages" class="flex flex-col items-center justify-center py-8 text-center space-y-4">
+                  <div class="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center border-2 border-dashed border-primary/20">
+                    <MessageSquare class="w-8 h-8 text-primary/30" />
                   </div>
-                  <div
+                  <div class="space-y-1">
+                    <h4 class="font-extrabold text-lg">Canal #{{ selectedChannel.name }}</h4>
+                    <p class="text-xs text-muted-foreground max-w-xs mx-auto">Début de la conversation. Envoyez le premier message !</p>
+                  </div>
+                </div>
+
+                <div v-if="loadingMessages" class="flex items-center justify-center py-12">
+                  <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+                </div>
+
+                <div
+                  v-for="msg in currentMessages" :key="msg.id"
+                  :class="cn('flex gap-3 px-2 group transition-all', msg.self ? 'flex-row-reverse' : '')"
+                >
+                  <Avatar class="w-9 h-9 border-2 mt-1 shadow-sm">
+                    <AvatarFallback class="text-[10px] font-black bg-muted">{{ msg.avatar }}</AvatarFallback>
+                  </Avatar>
+                  <div :class="cn('flex flex-col space-y-1 max-w-[70%]', msg.self ? 'items-end' : 'items-start')">
+                    <div :class="cn('flex items-center gap-2 text-xs font-black uppercase tracking-tighter text-muted-foreground', msg.self && 'flex-row-reverse')">
+                      <span>{{ msg.user }}</span>
+                      <span class="text-[9px] font-medium tracking-normal">{{ msg.time }}</span>
+                    </div>
+                    <div
+                      :class="cn(
+                        'px-4 py-3 rounded-2xl text-sm font-medium shadow-sm transition-all border-2',
+                        msg.self
+                          ? 'bg-primary text-white border-primary shadow-primary/10 rounded-tr-none'
+                          : 'bg-background border-border hover:border-primary/20 rounded-tl-none'
+                      )"
+                    >
+                      {{ msg.text }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+
+            <!-- Input Area -->
+            <div class="p-6 shrink-0 bg-background border-t-2 relative">
+              <form @submit.prevent="sendMessage" class="flex flex-col gap-3 bg-muted/30 p-2 rounded-2xl border-2 focus-within:border-primary/30 focus-within:bg-muted/50 transition-all">
+                <textarea
+                  v-model="message"
+                  class="w-full bg-transparent border-none outline-none resize-none p-3 text-sm min-h-[60px]"
+                  placeholder="Écrivez un message ici..."
+                  @keydown.enter.exact.prevent="sendMessage"
+                />
+                <div class="flex items-center justify-between px-2 pb-2">
+                  <div class="flex items-center gap-1">
+                    <Button type="button" variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10">
+                      <Paperclip class="w-4 h-4" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10">
+                      <Smile class="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <Button
+                    type="submit"
+                    size="sm"
                     :class="cn(
-                      'px-4 py-3 rounded-2xl text-sm font-medium shadow-sm transition-all border-2',
-                      msg.self
-                        ? 'bg-primary text-white border-primary shadow-primary/10 rounded-tr-none'
-                        : 'bg-background border-border hover:border-primary/20 rounded-tl-none'
+                      'font-black text-xs gap-2 px-6 rounded-xl transition-all shadow-lg',
+                      message.length > 0 ? 'bg-primary opacity-100 shadow-primary/20 scale-100' : 'opacity-50 scale-95 pointer-events-none'
                     )"
                   >
-                    {{ msg.text }}
-                  </div>
+                    Envoyer
+                    <Send class="w-3.5 h-3.5" />
+                  </Button>
                 </div>
-              </div>
+              </form>
             </div>
-          </ScrollArea>
+          </div>
+        </template>
 
-          <!-- Input Area -->
-          <div class="p-6 shrink-0 bg-background border-t-2 relative">
-            <form @submit.prevent="sendMessage" class="flex flex-col gap-3 bg-muted/30 p-2 rounded-2xl border-2 focus-within:border-primary/30 focus-within:bg-muted/50 transition-all">
-              <textarea
-                v-model="message"
-                class="w-full bg-transparent border-none outline-none resize-none p-3 text-sm min-h-[60px]"
-                placeholder="Écrivez un message ici..."
-                @keydown.enter.exact.prevent="sendMessage"
-              />
-              <div class="flex items-center justify-between px-2 pb-2">
-                <div class="flex items-center gap-1">
-                  <Button type="button" variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10">
-                    <Paperclip class="w-4 h-4" />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10">
-                    <Smile class="w-4 h-4" />
-                  </Button>
-                </div>
-                <Button
-                  type="submit"
-                  size="sm"
-                  :class="cn(
-                    'font-black text-xs gap-2 px-6 rounded-xl transition-all shadow-lg',
-                    message.length > 0 ? 'bg-primary opacity-100 shadow-primary/20 scale-100' : 'opacity-50 scale-95 pointer-events-none'
-                  )"
-                >
-                  Envoyer
-                  <Send class="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </form>
+        <!-- No channel selected -->
+        <div v-else class="flex-1 flex items-center justify-center">
+          <div class="text-center space-y-4">
+            <div class="w-20 h-20 bg-muted rounded-2xl flex items-center justify-center mx-auto border-2 border-dashed border-muted-foreground/20">
+              <MessageSquare class="w-10 h-10 text-muted-foreground/30" />
+            </div>
+            <div class="space-y-1">
+              <h3 class="text-lg font-bold text-muted-foreground">{{ channels.length === 0 ? 'Aucun canal' : 'Sélectionnez un canal' }}</h3>
+              <p class="text-sm text-muted-foreground/70">{{ channels.length === 0 ? 'Créez un canal pour commencer à communiquer.' : 'Choisissez un canal dans la barre latérale pour commencer.' }}</p>
+            </div>
           </div>
         </div>
       </Card>

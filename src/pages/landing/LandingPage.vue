@@ -28,9 +28,9 @@ const builderFeatures = [
 ]
 
 const stats = [
-  { value: '99.9%', label: 'Disponibilité garantie' },
-  { value: '256-bit', label: 'Chiffrement des données' },
-  { value: '<100ms', label: 'Temps de réponse' },
+  { value: '99.9%', label: 'Disponibilité' },
+  { value: 'AES-256', label: 'Chiffrement' },
+  { value: '<200ms', label: 'Temps de réponse' },
 ]
 </script>
 
