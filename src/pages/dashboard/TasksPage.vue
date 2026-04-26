@@ -296,7 +296,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
           <DialogContent class="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>Nouvelle Tâche</DialogTitle>
-              <DialogDescription>Créez et assignez une nouvelle tâche.</DialogDescription>
+              <DialogDescription>Plan your tasks, win the day</DialogDescription>
             </DialogHeader>
             <div class="grid gap-4 py-4">
               <div class="space-y-2">

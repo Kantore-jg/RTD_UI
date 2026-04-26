@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authService } from '@/services/auth'
+import { useThemeStore } from '@/stores/theme'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -45,6 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     token.value = null
     isAuthenticated.value = false
+    useThemeStore().setAccent('blue')
   }
 
   function setUser(userData) {

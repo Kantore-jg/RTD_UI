@@ -17,7 +17,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
+import { cn, storageUrl } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { toast } from 'vue-sonner'
@@ -66,7 +66,11 @@ onMounted(async () => {
       companyEmail: org.company_email || org.companyEmail || '',
       companyEmailPassword: '',
     }
-    if (org.logo) logoPreview.value = org.logo
+    if (org.logo) logoPreview.value = storageUrl(org.logo)
+    if (org.accent_color) themeStore.setAccent(org.accent_color)
+    if (user.value?.organization) {
+      authStore.setUser({ ...user.value, organization: { ...user.value.organization, ...org } })
+    }
   } catch {
     toast.error('Impossible de charger les paramètres')
   } finally {
@@ -90,7 +94,11 @@ async function handleLogoUpload(event) {
   formData.append('logo', file)
   try {
     const { data } = await settingsService.updateLogo(formData)
-    logoPreview.value = data.logo || data.data?.logo
+    const rawPath = data.data?.logo || data.logo
+    logoPreview.value = storageUrl(rawPath)
+    if (user.value?.organization) {
+      authStore.setUser({ ...user.value, organization: { ...user.value.organization, logo: rawPath } })
+    }
     toast.success('Logo mis à jour')
   } catch {
     toast.error('Erreur lors de l\'upload du logo')
@@ -102,6 +110,9 @@ async function removeLogo() {
     await settingsService.removeLogo()
     companyLogo.value = null
     logoPreview.value = null
+    if (user.value?.organization) {
+      authStore.setUser({ ...user.value, organization: { ...user.value.organization, logo: null } })
+    }
     toast.info('Logo supprimé')
   } catch {
     toast.error('Erreur lors de la suppression du logo')
@@ -161,21 +172,19 @@ const contactForm = ref({
   message: '',
 })
 
-const selectedAccentIndex = ref(0)
-
 const colors = [
-  { name: 'Bleu', value: 'bg-blue-500', ring: 'ring-blue-300' },
-  { name: 'Violet', value: 'bg-violet-500', ring: 'ring-violet-300' },
-  { name: 'Émeraude', value: 'bg-emerald-500', ring: 'ring-emerald-300' },
-  { name: 'Rose', value: 'bg-rose-500', ring: 'ring-rose-300' },
-  { name: 'Orange', value: 'bg-orange-500', ring: 'ring-orange-300' },
-  { name: 'Slate', value: 'bg-slate-800', ring: 'ring-slate-400' },
+  { id: 'blue', name: 'Bleu', value: 'bg-blue-500', ring: 'ring-blue-300' },
+  { id: 'violet', name: 'Violet', value: 'bg-violet-500', ring: 'ring-violet-300' },
+  { id: 'emerald', name: 'Émeraude', value: 'bg-emerald-500', ring: 'ring-emerald-300' },
+  { id: 'rose', name: 'Rose', value: 'bg-rose-500', ring: 'ring-rose-300' },
+  { id: 'orange', name: 'Orange', value: 'bg-orange-500', ring: 'ring-orange-300' },
+  { id: 'slate', name: 'Slate', value: 'bg-slate-800', ring: 'ring-slate-400' },
 ]
 
 async function saveOrg() {
   loading.value = true
   try {
-    await settingsService.updateOrg({
+    const { data } = await settingsService.updateOrg({
       name: orgForm.value.name,
       domain: orgForm.value.domain,
       address: orgForm.value.address,
@@ -183,6 +192,10 @@ async function saveOrg() {
       email: orgForm.value.email,
       company_email: orgForm.value.companyEmail,
     })
+    const updatedOrg = data.data || data
+    if (user.value?.organization) {
+      authStore.setUser({ ...user.value, organization: { ...user.value.organization, ...updatedOrg } })
+    }
     toast.success('Informations de l\'organisation sauvegardées')
   } catch {
     toast.error('Erreur lors de la sauvegarde')
@@ -259,9 +272,14 @@ async function sendContactMessage() {
   }
 }
 
-function selectAccent(index) {
-  selectedAccentIndex.value = index
-  toast.success(`Couleur "${colors[index].name}" sélectionnée`)
+async function selectAccent(color) {
+  themeStore.setAccent(color.id)
+  try {
+    await settingsService.updateOrg({ accent_color: color.id })
+    toast.success(`Couleur "${color.name}" appliquée`)
+  } catch {
+    toast.error('Erreur lors de la sauvegarde de la couleur')
+  }
 }
 
 function handleLogout() {
@@ -291,7 +309,7 @@ function handleLogout() {
           <div class="h-20 bg-gradient-to-br from-primary via-primary/80 to-violet-500" />
           <CardContent class="p-5 -mt-10 flex flex-col items-center text-center">
             <Avatar class="w-16 h-16 border-4 border-white shadow-md">
-              <AvatarImage :src="user?.avatar" />
+              <AvatarImage :src="storageUrl(user?.avatar)" />
               <AvatarFallback class="bg-primary text-white font-bold text-lg">
                 {{ user?.name?.charAt(0) ?? 'U' }}
               </AvatarFallback>
@@ -475,18 +493,23 @@ function handleLogout() {
               </div>
               <div>
                 <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Couleur d'accentuation</p>
-                <div class="flex gap-3">
+                <div class="flex flex-wrap gap-3">
                   <button
-                    v-for="(color, i) in colors" :key="i"
+                    v-for="color in colors" :key="color.id"
                     :class="cn(
-                      'w-8 h-8 rounded-full transition-all hover:scale-110',
+                      'w-10 h-10 rounded-full transition-all hover:scale-110 flex items-center justify-center',
                       color.value,
-                      i === selectedAccentIndex ? 'ring-2 ring-offset-2 ' + color.ring : ''
+                      themeStore.accent === color.id ? 'ring-2 ring-offset-2 ' + color.ring : ''
                     )"
                     :title="color.name"
-                    @click="selectAccent(i)"
-                  />
+                    @click="selectAccent(color)"
+                  >
+                    <svg v-if="themeStore.accent === color.id" class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
                 </div>
+                <p class="text-xs text-slate-400 mt-2">Cette couleur sera appliquée à toute l'interface de votre entreprise.</p>
               </div>
             </CardContent>
           </Card>

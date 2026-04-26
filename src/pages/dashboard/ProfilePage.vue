@@ -18,6 +18,7 @@ import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { toast } from 'vue-sonner'
 import { profileService } from '@/services/profile'
+import { storageUrl } from '@/lib/utils'
 
 const authStore = useAuthStore()
 const { user } = storeToRefs(authStore)
@@ -192,7 +193,7 @@ const memberSince = computed(() => {
   return d.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' })
 })
 
-const displayAvatar = computed(() => avatarPreview.value || user.value?.avatar || null)
+const displayAvatar = computed(() => avatarPreview.value || storageUrl(user.value?.avatar) || null)
 </script>
 
 <template>

@@ -40,7 +40,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useBuilderStore } from '@/stores/builder'
-import { cn } from '@/lib/utils'
+import { cn, storageUrl } from '@/lib/utils'
 
 const isSidebarCollapsed = ref(false)
 const isMobileMenuOpen = ref(false)
@@ -55,6 +55,9 @@ const { sidebarModules: builderModules } = storeToRefs(builderStore)
 
 const route = useRoute()
 const router = useRouter()
+
+const orgName = computed(() => user.value?.organization?.name || '')
+const orgLogo = computed(() => storageUrl(user.value?.organization?.logo))
 
 const adminNavItems = [
   { label: 'Tableau de bord', icon: LayoutDashboard, path: '/dashboard', moduleId: null },
@@ -99,9 +102,18 @@ function handleLogout() {
   router.push('/')
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (isAdmin.value && !builderStore.loaded) {
     builderStore.fetchModules()
+  }
+
+  await authStore.fetchUser()
+
+  const orgAccent = user.value?.organization?.accent_color
+  if (orgAccent) {
+    themeStore.setAccent(orgAccent)
+  } else {
+    themeStore.applyCurrentAccent()
   }
 })
 
@@ -122,17 +134,21 @@ watch(isAdmin, (val) => {
       )"
     >
       <!-- Brand -->
-      <div class="h-16 flex items-center justify-between px-6 mb-4 border-b border-sidebar-border/30">
-        <div class="flex items-center">
-          <div class="w-8 h-8 bg-primary rounded flex items-center justify-center shrink-0">
+      <div class="flex items-center justify-between px-4 py-3 mb-2 border-b border-sidebar-border/30" :class="isSidebarCollapsed ? 'h-16' : 'min-h-16'">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div v-if="orgLogo" class="w-8 h-8 rounded-lg overflow-hidden shrink-0 bg-white/10">
+            <img :src="orgLogo" alt="Logo" class="w-full h-full object-cover" />
+          </div>
+          <div v-else class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
             <div class="w-4 h-4 bg-white rounded-sm" />
           </div>
-          <span v-if="!isSidebarCollapsed" class="ml-3 font-bold text-lg tracking-tight">
-            RDT
-          </span>
+          <div v-if="!isSidebarCollapsed" class="min-w-0">
+            <p class="font-bold text-sm leading-tight text-white truncate">RDT</p>
+            <p v-if="orgName" class="text-[10px] font-medium text-sidebar-foreground/60 truncate leading-tight">{{ orgName }}</p>
+          </div>
         </div>
         <button
-          class="w-7 h-7 flex items-center justify-center hover:bg-sidebar-accent rounded-md transition-colors text-sidebar-foreground/60 hover:text-white"
+          class="w-7 h-7 flex items-center justify-center hover:bg-sidebar-accent rounded-md transition-colors text-sidebar-foreground/60 hover:text-white shrink-0"
           @click="isSidebarCollapsed = !isSidebarCollapsed"
         >
           <ChevronLeft v-if="!isSidebarCollapsed" class="w-4 h-4" />
@@ -219,7 +235,7 @@ watch(isAdmin, (val) => {
             <DropdownMenuTrigger as-child>
               <Button variant="ghost" class="flex items-center gap-2 px-2">
                 <Avatar class="h-8 w-8">
-                  <AvatarImage :src="user?.avatar" :alt="user?.name" />
+                  <AvatarImage :src="storageUrl(user?.avatar)" :alt="user?.name" />
                   <AvatarFallback>
                     {{ user?.name?.charAt(0) || 'U' }}
                   </AvatarFallback>

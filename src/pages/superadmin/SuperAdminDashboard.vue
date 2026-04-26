@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { cn } from '@/lib/utils'
+import { cn, storageUrl } from '@/lib/utils'
 import { toast } from 'vue-sonner'
 import { superAdminService } from '@/services/superadmin'
 
@@ -110,10 +110,7 @@ async function fetchPayments() {
 }
 
 function getReceiptUrl(receipt) {
-  if (!receipt) return null
-  if (receipt.startsWith('http')) return receipt
-  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-  return `${apiBase.replace('/api', '')}/storage/${receipt}`
+  return storageUrl(receipt)
 }
 
 async function fetchPaymentMethods() {

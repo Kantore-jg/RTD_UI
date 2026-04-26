@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { cn } from '@/lib/utils'
+import { cn, storageUrl } from '@/lib/utils'
 import {
   Wallet, ArrowUpCircle, ArrowDownCircle, TrendingUp,
   Filter, Download, Plus, Search, FileText, Upload,
@@ -116,10 +116,7 @@ function getPaymentMethodLabel(payment) {
 }
 
 function getReceiptUrl(receipt) {
-  if (!receipt) return null
-  if (receipt.startsWith('http')) return receipt
-  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-  return `${apiBase.replace('/api', '')}/storage/${receipt}`
+  return storageUrl(receipt)
 }
 
 onMounted(async () => {
