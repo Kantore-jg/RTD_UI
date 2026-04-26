@@ -68,4 +68,24 @@ export const superAdminService = {
   markAdminMessageRead(id) {
     return api.patch(`/super-admin/admin-messages/${id}/read`)
   },
+
+  replyContactMessage(id, data) {
+    return api.post(`/super-admin/contact-messages/${id}/reply`, data)
+  },
+
+  newsletters(params = {}) {
+    return api.get('/super-admin/newsletters', { params })
+  },
+
+  createNewsletter(data) {
+    return api.post('/super-admin/newsletters', data)
+  },
+
+  sendNewsletter(id) {
+    return api.post(`/super-admin/newsletters/${id}/send`)
+  },
+
+  deleteNewsletter(id) {
+    return api.delete(`/super-admin/newsletters/${id}`)
+  },
 }

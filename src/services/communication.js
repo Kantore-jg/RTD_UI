@@ -39,3 +39,9 @@ export const suggestionService = {
     return api.patch(`/suggestions/${id}/status`, { status })
   },
 }
+
+export const newsletterService = {
+  list(params = {}) {
+    return api.get('/newsletters', { params })
+  },
+}

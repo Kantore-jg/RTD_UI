@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import {
   MessageSquare, Send, Search, Megaphone, Hash,
   Plus, MoreVertical, Paperclip, Smile,
-  Lightbulb, X,
+  Lightbulb, X, Newspaper, Clock,
 } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
-import { channelService, suggestionService } from '@/services/communication'
+import { channelService, suggestionService, newsletterService } from '@/services/communication'
 
 const authStore = useAuthStore()
 const { user, isAdmin, isEmployee } = storeToRefs(authStore)
@@ -225,9 +225,25 @@ async function updateSuggestionStatus(suggestion, status) {
   }
 }
 
+const receivedNewsletters = ref([])
+const loadingNewsletters = ref(false)
+
+async function fetchNewsletters() {
+  loadingNewsletters.value = true
+  try {
+    const { data } = await newsletterService.list()
+    receivedNewsletters.value = data.data || data || []
+  } catch {
+    // silent
+  } finally {
+    loadingNewsletters.value = false
+  }
+}
+
 onMounted(() => {
   fetchChannels()
   fetchSuggestions()
+  fetchNewsletters()
 })
 </script>
 
@@ -241,7 +257,11 @@ onMounted(() => {
             <MessageSquare class="w-3.5 h-3.5 mr-1.5" />Communication
           </TabsTrigger>
           <TabsTrigger value="suggestions" class="font-bold data-[state=active]:bg-background rounded-lg px-4 text-xs">
-            <Lightbulb class="w-3.5 h-3.5 mr-1.5" />Boîte à suggestions
+            <Lightbulb class="w-3.5 h-3.5 mr-1.5" />Suggestions
+          </TabsTrigger>
+          <TabsTrigger value="newsletter" class="font-bold data-[state=active]:bg-background rounded-lg px-4 text-xs">
+            <Newspaper class="w-3.5 h-3.5 mr-1.5" />Newsletter
+            <Badge v-if="receivedNewsletters.length" variant="secondary" class="ml-1 h-4 min-w-4 px-1 text-[10px]">{{ receivedNewsletters.length }}</Badge>
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -555,6 +575,47 @@ onMounted(() => {
             <Lightbulb class="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p class="font-medium">Aucune suggestion</p>
             <p class="text-sm">{{ isEmployee ? 'Vous n\'avez pas encore soumis de suggestion.' : 'Aucune suggestion trouvée.' }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEWSLETTER VIEW -->
+    <div v-if="activeView === 'newsletter'" class="flex-1 overflow-auto">
+      <div class="space-y-6">
+        <div>
+          <h2 class="text-xl font-bold flex items-center gap-2">
+            <Newspaper class="w-5 h-5 text-primary" />
+            Newsletter de la plateforme
+          </h2>
+          <p class="text-sm text-muted-foreground">Actualités et communications de l'administration RDT.</p>
+        </div>
+
+        <div v-if="loadingNewsletters" class="flex items-center justify-center py-16">
+          <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+        </div>
+
+        <div v-else class="space-y-4">
+          <Card
+            v-for="nl in receivedNewsletters" :key="nl.id"
+            class="border-2 hover:border-primary/20 transition-all"
+          >
+            <CardContent class="p-6 space-y-3">
+              <div class="flex items-center justify-between">
+                <h3 class="font-bold text-base text-slate-800">{{ nl.subject }}</h3>
+                <span v-if="nl.sent_at" class="text-xs text-slate-400 flex items-center gap-1 shrink-0">
+                  <Clock class="w-3 h-3" />
+                  {{ new Date(nl.sent_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) }}
+                </span>
+              </div>
+              <div class="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{{ nl.content }}</div>
+            </CardContent>
+          </Card>
+
+          <div v-if="receivedNewsletters.length === 0" class="text-center py-16 text-muted-foreground">
+            <Newspaper class="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p class="font-medium">Aucune newsletter reçue</p>
+            <p class="text-sm">Les newsletters de la plateforme apparaîtront ici.</p>
           </div>
         </div>
       </div>

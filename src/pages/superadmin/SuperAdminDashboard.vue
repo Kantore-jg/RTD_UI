@@ -5,7 +5,8 @@ import {
   ShieldAlert, Search, Filter, Plus, MoreHorizontal,
   TrendingUp, Activity, Globe, CreditCard, FileText,
   CheckCircle2, XCircle, Eye, Trash2, Edit, Mail,
-  Phone, MapPin, Hash, Wallet, X,
+  Phone, MapPin, Hash, Wallet, X, Send, Newspaper,
+  MessageSquare, Reply, Clock,
 } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,8 @@ import { cn, storageUrl } from '@/lib/utils'
 import { toast } from 'vue-sonner'
 import { superAdminService } from '@/services/superadmin'
 
+import { Textarea } from '@/components/ui/textarea'
+
 const loading = ref(false)
 const activeTab = ref('companies')
 
@@ -34,6 +37,8 @@ const companies = ref([])
 const payments = ref([])
 const paymentMethods = ref([])
 const adminMessages = ref([])
+const contactMessages = ref([])
+const newsletters = ref([])
 const dashboardStats = ref(null)
 
 const searchTerm = ref('')
@@ -43,6 +48,14 @@ const showCompanyDetail = ref(false)
 const selectedCompany = ref(null)
 const currentPage = ref(1)
 const itemsPerPage = 3
+
+const showNewNewsletter = ref(false)
+const newNewsletter = ref({ subject: '', content: '' })
+const sendingNewsletter = ref(null)
+
+const replyingTo = ref(null)
+const replyText = ref('')
+const sendingReply = ref(false)
 
 const newCompany = ref({
   name: '', owner: '', email: '', phone: '', address: '', nif: '', monthlyFee: '',
@@ -146,6 +159,29 @@ async function fetchDashboard() {
   }
 }
 
+async function fetchContactMessages() {
+  try {
+    const { data } = await superAdminService.contactMessages()
+    const raw = data.data || data || []
+    contactMessages.value = (Array.isArray(raw) ? raw : []).map(m => ({
+      ...m,
+      fullName: `${m.first_name || ''} ${m.last_name || ''}`.trim(),
+      date: m.created_at ? new Date(m.created_at).toLocaleDateString('fr-FR') : '',
+    }))
+  } catch {
+    toast.error('Erreur lors du chargement des messages de contact')
+  }
+}
+
+async function fetchNewsletters() {
+  try {
+    const { data } = await superAdminService.newsletters()
+    newsletters.value = data.data || data || []
+  } catch {
+    toast.error('Erreur lors du chargement des newsletters')
+  }
+}
+
 onMounted(async () => {
   loading.value = true
   await Promise.all([
@@ -154,6 +190,8 @@ onMounted(async () => {
     fetchPayments(),
     fetchPaymentMethods(),
     fetchAdminMessages(),
+    fetchContactMessages(),
+    fetchNewsletters(),
   ])
   loading.value = false
 })
@@ -336,6 +374,64 @@ async function markMessageRead(msg) {
     msg.read = true
   }
 }
+
+async function replyToContact(msg) {
+  if (!replyText.value.trim()) {
+    toast.error('Veuillez écrire une réponse')
+    return
+  }
+  sendingReply.value = true
+  try {
+    await superAdminService.replyContactMessage(msg.id, { reply: replyText.value })
+    toast.success(`Réponse envoyée à ${msg.email}`)
+    replyText.value = ''
+    replyingTo.value = null
+    await fetchContactMessages()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de l\'envoi de la réponse')
+  } finally {
+    sendingReply.value = false
+  }
+}
+
+async function createNewsletter() {
+  if (!newNewsletter.value.subject.trim() || !newNewsletter.value.content.trim()) {
+    toast.error('Le sujet et le contenu sont obligatoires')
+    return
+  }
+  try {
+    await superAdminService.createNewsletter(newNewsletter.value)
+    newNewsletter.value = { subject: '', content: '' }
+    showNewNewsletter.value = false
+    toast.success('Brouillon de newsletter créé')
+    await fetchNewsletters()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la création')
+  }
+}
+
+async function sendNewsletter(newsletter) {
+  sendingNewsletter.value = newsletter.id
+  try {
+    const { data } = await superAdminService.sendNewsletter(newsletter.id)
+    toast.success(data.message || 'Newsletter envoyée')
+    await fetchNewsletters()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de l\'envoi')
+  } finally {
+    sendingNewsletter.value = null
+  }
+}
+
+async function deleteNewsletter(id) {
+  try {
+    await superAdminService.deleteNewsletter(id)
+    toast.success('Brouillon supprimé')
+    await fetchNewsletters()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de la suppression')
+  }
+}
 </script>
 
 <template>
@@ -388,7 +484,7 @@ async function markMessageRead(msg) {
 
     <!-- Tabs -->
     <Tabs v-model="activeTab" class="space-y-6">
-      <TabsList class="bg-muted p-1 border h-11 rounded-xl gap-1">
+      <TabsList class="bg-muted p-1 border h-11 rounded-xl gap-1 flex-wrap">
         <TabsTrigger value="companies" class="font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg px-4 text-xs">
           <Building2 class="w-3.5 h-3.5 mr-1.5" />Entreprises
         </TabsTrigger>
@@ -396,11 +492,18 @@ async function markMessageRead(msg) {
           <Wallet class="w-3.5 h-3.5 mr-1.5" />Paiements
         </TabsTrigger>
         <TabsTrigger value="paymentMethods" class="font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg px-4 text-xs">
-          <CreditCard class="w-3.5 h-3.5 mr-1.5" />Moyens de paiement
+          <CreditCard class="w-3.5 h-3.5 mr-1.5" />Moyens
         </TabsTrigger>
         <TabsTrigger value="messages" class="font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg px-4 text-xs relative">
           <Mail class="w-3.5 h-3.5 mr-1.5" />Messages
           <span v-if="adminMessages.filter(m => !m.read).length" class="ml-1 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center">{{ adminMessages.filter(m => !m.read).length }}</span>
+        </TabsTrigger>
+        <TabsTrigger value="contact" class="font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg px-4 text-xs relative">
+          <MessageSquare class="w-3.5 h-3.5 mr-1.5" />Contact
+          <span v-if="contactMessages.filter(m => !m.read).length" class="ml-1 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center">{{ contactMessages.filter(m => !m.read).length }}</span>
+        </TabsTrigger>
+        <TabsTrigger value="newsletter" class="font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg px-4 text-xs">
+          <Newspaper class="w-3.5 h-3.5 mr-1.5" />Newsletter
         </TabsTrigger>
       </TabsList>
 
@@ -753,6 +856,195 @@ async function markMessageRead(msg) {
             </div>
             <div v-if="adminMessages.length === 0" class="text-center py-8 text-slate-400">
               Aucun message
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <!-- === CONTACT MESSAGES TAB === -->
+      <TabsContent value="contact">
+        <Card class="border border-slate-200 bg-white rounded-xl shadow-sm">
+          <CardHeader>
+            <CardTitle class="font-bold text-lg flex items-center gap-2">
+              <MessageSquare class="w-5 h-5 text-primary" />
+              Messages de Contact
+            </CardTitle>
+            <CardDescription>Messages reçus depuis le formulaire de contact du site.</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div
+              v-for="msg in contactMessages" :key="msg.id"
+              :class="cn(
+                'p-5 rounded-xl border-2 transition-all',
+                msg.read ? 'bg-white border-slate-100' : 'bg-blue-50/30 border-blue-200'
+              )"
+            >
+              <div class="flex justify-between items-start mb-3">
+                <div class="flex items-center gap-3">
+                  <div :class="cn('w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-xs', msg.read ? 'bg-slate-400' : 'bg-primary')">
+                    {{ (msg.first_name || '?')[0] }}{{ (msg.last_name || '?')[0] }}
+                  </div>
+                  <div>
+                    <p class="font-bold text-sm text-slate-800">{{ msg.fullName }}</p>
+                    <p class="text-xs text-slate-500">{{ msg.email }} · {{ msg.company || 'Particulier' }}</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Badge v-if="msg.replied_at" class="bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                    <CheckCircle2 class="w-3 h-3 mr-1" />Répondu
+                  </Badge>
+                  <Badge v-else-if="!msg.read" class="bg-blue-100 text-blue-700 text-[10px] font-bold">Nouveau</Badge>
+                  <span class="text-xs text-slate-400">{{ msg.date }}</span>
+                </div>
+              </div>
+
+              <div class="pl-12 space-y-3">
+                <p class="text-sm font-semibold text-slate-700">{{ msg.subject }}</p>
+                <p class="text-sm text-slate-600 leading-relaxed">{{ msg.message }}</p>
+
+                <div v-if="msg.reply_text" class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mt-2">
+                  <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-1">Votre réponse</p>
+                  <p class="text-sm text-emerald-800">{{ msg.reply_text }}</p>
+                </div>
+
+                <div v-if="replyingTo === msg.id" class="space-y-3 mt-3">
+                  <Textarea
+                    v-model="replyText"
+                    placeholder="Écrivez votre réponse... Elle sera envoyée par email."
+                    class="min-h-[100px] text-sm"
+                  />
+                  <div class="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" class="text-xs" @click="replyingTo = null; replyText = ''">
+                      Annuler
+                    </Button>
+                    <Button size="sm" class="text-xs font-bold" :disabled="sendingReply" @click="replyToContact(msg)">
+                      <Send class="w-3.5 h-3.5 mr-1" />
+                      {{ sendingReply ? 'Envoi...' : 'Envoyer la réponse' }}
+                    </Button>
+                  </div>
+                </div>
+
+                <div v-else-if="!msg.replied_at" class="flex justify-end">
+                  <Button variant="outline" size="sm" class="text-xs font-bold" @click="replyingTo = msg.id; replyText = ''">
+                    <Reply class="w-3.5 h-3.5 mr-1" />Répondre
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="contactMessages.length === 0" class="text-center py-12 text-slate-400">
+              <MessageSquare class="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p class="text-sm">Aucun message de contact reçu</p>
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <!-- === NEWSLETTER TAB === -->
+      <TabsContent value="newsletter">
+        <Card class="border border-slate-200 bg-white rounded-xl shadow-sm">
+          <CardHeader>
+            <div class="flex justify-between items-center">
+              <div>
+                <CardTitle class="font-bold text-lg flex items-center gap-2">
+                  <Newspaper class="w-5 h-5 text-primary" />
+                  Newsletter
+                </CardTitle>
+                <CardDescription>Créez et envoyez des newsletters à toutes les entreprises actives.</CardDescription>
+              </div>
+              <Dialog v-model:open="showNewNewsletter">
+                <DialogTrigger as-child>
+                  <Button size="sm" class="text-xs font-bold uppercase tracking-wider">
+                    <Plus class="w-3.5 h-3.5 mr-1" />Nouvelle Newsletter
+                  </Button>
+                </DialogTrigger>
+                <DialogContent class="sm:max-w-[600px]">
+                  <DialogHeader>
+                    <DialogTitle>Créer une Newsletter</DialogTitle>
+                    <DialogDescription>Rédigez votre newsletter. Elle sera sauvegardée en brouillon avant envoi.</DialogDescription>
+                  </DialogHeader>
+                  <div class="space-y-4 py-4">
+                    <div class="space-y-2">
+                      <Label class="text-xs font-bold uppercase text-slate-500">Sujet</Label>
+                      <Input v-model="newNewsletter.subject" placeholder="Ex: Nouveautés de la plateforme — Avril 2026" />
+                    </div>
+                    <div class="space-y-2">
+                      <Label class="text-xs font-bold uppercase text-slate-500">Contenu</Label>
+                      <Textarea
+                        v-model="newNewsletter.content"
+                        placeholder="Écrivez le contenu de votre newsletter..."
+                        class="min-h-[200px] text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div class="flex justify-end gap-2">
+                    <Button variant="outline" @click="showNewNewsletter = false">Annuler</Button>
+                    <Button @click="createNewsletter">
+                      <FileText class="w-3.5 h-3.5 mr-1" />Sauvegarder le brouillon
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div class="space-y-4">
+              <div
+                v-for="nl in newsletters" :key="nl.id"
+                :class="cn(
+                  'p-5 rounded-xl border-2 transition-all',
+                  nl.status === 'sent' ? 'bg-emerald-50/30 border-emerald-200' : 'bg-white border-slate-200'
+                )"
+              >
+                <div class="flex justify-between items-start">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                      <Badge
+                        :class="nl.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'"
+                        class="text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        {{ nl.status === 'sent' ? 'Envoyée' : 'Brouillon' }}
+                      </Badge>
+                      <span v-if="nl.sent_at" class="text-xs text-slate-400 flex items-center gap-1">
+                        <Clock class="w-3 h-3" />
+                        {{ new Date(nl.sent_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
+                      </span>
+                      <span v-if="nl.recipients_count" class="text-xs text-slate-400">
+                        · {{ nl.recipients_count }} destinataire(s)
+                      </span>
+                    </div>
+                    <h3 class="font-bold text-sm text-slate-800 mb-2">{{ nl.subject }}</h3>
+                    <p class="text-sm text-slate-600 line-clamp-3 whitespace-pre-line">{{ nl.content }}</p>
+                  </div>
+                  <div class="flex items-center gap-2 ml-4 shrink-0">
+                    <Button
+                      v-if="nl.status === 'draft'"
+                      size="sm"
+                      class="text-xs font-bold bg-primary"
+                      :disabled="sendingNewsletter === nl.id"
+                      @click="sendNewsletter(nl)"
+                    >
+                      <Send class="w-3.5 h-3.5 mr-1" />
+                      {{ sendingNewsletter === nl.id ? 'Envoi...' : 'Envoyer' }}
+                    </Button>
+                    <Button
+                      v-if="nl.status === 'draft'"
+                      variant="ghost"
+                      size="icon"
+                      class="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
+                      @click="deleteNewsletter(nl.id)"
+                    >
+                      <Trash2 class="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="newsletters.length === 0" class="text-center py-12 text-slate-400">
+                <Newspaper class="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p class="text-sm">Aucune newsletter créée</p>
+                <p class="text-xs mt-1">Créez votre première newsletter pour communiquer avec vos entreprises.</p>
+              </div>
             </div>
           </CardContent>
         </Card>
