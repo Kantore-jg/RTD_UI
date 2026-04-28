@@ -43,12 +43,13 @@ const stats = [
           <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
             <Zap class="text-white w-5 h-5" />
           </div>
+          <!-- favicon -->
           <span class="font-bold text-xl tracking-tight">Registre Dynamique</span>
         </div>
         <nav class="hidden md:flex items-center gap-8">
           <a href="#features" class="text-sm font-medium hover:text-primary transition-colors">Fonctionnalités</a>
           <a href="#solutions" class="text-sm font-medium hover:text-primary transition-colors">Solutions</a>
-          <a href="#pricing" class="text-sm font-medium hover:text-primary transition-colors">Tarifs</a>
+          <!-- <a href="#pricing" class="text-sm font-medium hover:text-primary transition-colors">Tarifs</a> -->
           <router-link to="/contact" class="text-sm font-medium hover:text-primary transition-colors">Contact</router-link>
         </nav>
         <div class="flex items-center gap-4">
