@@ -595,7 +595,7 @@ onMounted(() => {
                 <Users class="w-4 h-4 text-primary" />
               </div>
               <div class="flex-1">
-                <p class="text-sm font-bold">{{ log.user }}</p>
+                <p class="text-sm font-bold">{{ log.user.name }}</p>
                 <p class="text-xs text-slate-500">{{ log.action }}</p>
               </div>
               <span class="text-xs text-slate-400">{{ log.date }}</span>

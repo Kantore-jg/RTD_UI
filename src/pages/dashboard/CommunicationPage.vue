@@ -447,14 +447,14 @@ onMounted(() => {
                   @keydown.enter.exact.prevent="sendMessage"
                 />
                 <div class="flex items-center justify-between px-2 pb-2">
-                  <div class="flex items-center gap-1">
+                  <!-- <div class="flex items-center gap-1">
                     <Button type="button" variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10">
                       <Paperclip class="w-4 h-4" />
                     </Button>
                     <Button type="button" variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10">
                       <Smile class="w-4 h-4" />
                     </Button>
-                  </div>
+                  </div> -->
                   <Button
                     type="submit"
                     size="sm"
@@ -545,9 +545,9 @@ onMounted(() => {
                   )">
                     {{ s.status === 'implemented' ? 'Implémenté' : s.status === 'rejected' ? 'Rejeté' : 'Ouvert' }}
                   </Badge>
-                  <Button variant="outline" size="sm" class="text-xs" @click="voteSuggestion(s)">
+                  <!-- <Button variant="outline" size="sm" class="text-xs" @click="voteSuggestion(s)">
                     👍 {{ s.votes }}
-                  </Button>
+                  </Button> -->
                   <!-- Admin actions -->
                   <DropdownMenu v-if="isAdmin">
                     <DropdownMenuTrigger as-child>

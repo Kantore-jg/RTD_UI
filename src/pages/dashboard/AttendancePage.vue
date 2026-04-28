@@ -117,7 +117,7 @@ async function toggleClock() {
 }
 
 function handleQrScan() {
-  toast.info('Scan QR Code en cours... Fonctionnalité disponible sur l\'application mobile.')
+  toast.info('Scan QR Code en cours de developpement... we\'re trying to do our best to make it work on the application mobile.')
 }
 
 function applyRoleFilter(records) {
