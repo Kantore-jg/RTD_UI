@@ -129,7 +129,7 @@ async function handleLogin() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="vous@entreprise.com"
+                    placeholder="email"
                     v-model="email"
                     class="pl-10"
                     :disabled="isLoading"
