@@ -69,6 +69,10 @@ export const superAdminService = {
     return api.patch(`/super-admin/admin-messages/${id}/read`)
   },
 
+  replyAdminMessage(id, data) {
+    return api.post(`/super-admin/admin-messages/${id}/reply`, data)
+  },
+
   replyContactMessage(id, data) {
     return api.post(`/super-admin/contact-messages/${id}/reply`, data)
   },

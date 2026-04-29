@@ -57,6 +57,15 @@ const replyingTo = ref(null)
 const replyText = ref('')
 const sendingReply = ref(false)
 
+const adminReplyingTo = ref(null)
+const adminReplyText = ref('')
+const sendingAdminReply = ref(false)
+
+const showEditCompany = ref(false)
+const editingCompany = ref(null)
+const editForm = ref({ name: '', email: '', phone: '', address: '', nif: '', domain: '', plan: '', monthly_fee: '', status: '' })
+const savingEdit = ref(false)
+
 const newCompany = ref({
   name: '', owner: '', email: '', phone: '', address: '', nif: '', monthlyFee: '',
 })
@@ -375,6 +384,68 @@ async function markMessageRead(msg) {
   }
 }
 
+async function replyToAdminMessage(msg) {
+  if (!adminReplyText.value.trim()) {
+    toast.error('Veuillez écrire une réponse')
+    return
+  }
+  sendingAdminReply.value = true
+  try {
+    await superAdminService.replyAdminMessage(msg.id, { reply: adminReplyText.value })
+    toast.success(`Réponse envoyée pour "${msg.subject}"`)
+    adminReplyText.value = ''
+    adminReplyingTo.value = null
+    await fetchAdminMessages()
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Erreur lors de l\'envoi de la réponse')
+  } finally {
+    sendingAdminReply.value = false
+  }
+}
+
+function openEditCompany(company) {
+  editingCompany.value = company
+  editForm.value = {
+    name: company.name || '',
+    email: company.email || '',
+    phone: company.phone || '',
+    address: company.address || '',
+    nif: company.nif || '',
+    domain: company.domain || '',
+    plan: company.plan || 'trial',
+    monthly_fee: String(company.monthlyFee || '').replace(/[^\d.]/g, ''),
+    status: company.status || 'active',
+  }
+  showEditCompany.value = true
+}
+
+async function saveEditCompany() {
+  if (!editingCompany.value) return
+  savingEdit.value = true
+  try {
+    await superAdminService.updateOrganization(editingCompany.value.id, {
+      name: editForm.value.name,
+      email: editForm.value.email,
+      phone: editForm.value.phone,
+      address: editForm.value.address,
+      nif: editForm.value.nif,
+      domain: editForm.value.domain,
+      plan: editForm.value.plan,
+      monthly_fee: editForm.value.monthly_fee ? Number(editForm.value.monthly_fee) : null,
+      status: editForm.value.status,
+    })
+    showEditCompany.value = false
+    editingCompany.value = null
+    await fetchCompanies()
+    toast.success('Entreprise mise à jour avec succès')
+  } catch (err) {
+    const msg = err.response?.data?.message || Object.values(err.response?.data?.errors || {}).flat()[0] || 'Erreur lors de la modification'
+    toast.error(msg)
+  } finally {
+    savingEdit.value = false
+  }
+}
+
 async function replyToContact(msg) {
   if (!replyText.value.trim()) {
     toast.error('Veuillez écrire une réponse')
@@ -648,8 +719,11 @@ async function deleteNewsletter(id) {
                         <DropdownMenuItem class="cursor-pointer" @click="viewCompanyDetail(company)">
                           <Eye class="w-4 h-4 mr-2" />Voir les détails
                         </DropdownMenuItem>
+                        <DropdownMenuItem class="cursor-pointer" @click="openEditCompany(company)">
+                          <Edit class="w-4 h-4 mr-2" />Modifier
+                        </DropdownMenuItem>
                         <DropdownMenuItem class="cursor-pointer" @click="viewCompanyDetail(company)">
-                          <Edit class="w-4 h-4 mr-2" />Gérer les modules
+                          <LayoutGrid class="w-4 h-4 mr-2" />Gérer les modules
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem class="cursor-pointer" @click="toggleCompanyStatus(company)">
@@ -831,31 +905,77 @@ async function deleteNewsletter(id) {
       <TabsContent value="messages">
         <Card class="border border-slate-200 bg-white rounded-xl shadow-sm">
           <CardHeader>
-            <CardTitle class="font-bold text-lg">Messages des Entreprises</CardTitle>
+            <CardTitle class="font-bold text-lg flex items-center gap-2">
+              <Mail class="w-5 h-5 text-primary" />
+              Messages des Entreprises
+            </CardTitle>
             <CardDescription>Messages et demandes reçus des entreprises clientes.</CardDescription>
           </CardHeader>
-          <CardContent class="space-y-3">
+          <CardContent class="space-y-4">
             <div
               v-for="msg in adminMessages" :key="msg.id"
               :class="cn(
-                'p-4 rounded-lg border-2 cursor-pointer transition-all hover:border-primary/30',
-                msg.read ? 'bg-white border-slate-100' : 'bg-blue-50/50 border-blue-200'
+                'p-5 rounded-xl border-2 transition-all',
+                msg.read ? 'bg-white border-slate-100' : 'bg-blue-50/30 border-blue-200'
               )"
               @click="markMessageRead(msg)"
             >
-              <div class="flex justify-between items-start">
+              <div class="flex justify-between items-start mb-3">
                 <div class="flex items-center gap-3">
-                  <div :class="cn('w-2 h-2 rounded-full', msg.read ? 'bg-transparent' : 'bg-blue-500')" />
+                  <div :class="cn('w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-xs', msg.read ? 'bg-slate-400' : 'bg-primary')">
+                    {{ (msg.from || '?')[0] }}
+                  </div>
                   <div>
-                    <p class="font-bold text-sm">{{ msg.subject }}</p>
-                    <p class="text-xs text-slate-500">{{ msg.from }} — {{ msg.company }}</p>
+                    <p class="font-bold text-sm text-slate-800">{{ msg.from }}</p>
+                    <p class="text-xs text-slate-500">{{ msg.company }}</p>
                   </div>
                 </div>
-                <span class="text-xs text-slate-400">{{ msg.date }}</span>
+                <div class="flex items-center gap-2">
+                  <Badge v-if="msg.replied_at" class="bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                    <CheckCircle2 class="w-3 h-3 mr-1" />Répondu
+                  </Badge>
+                  <Badge v-else-if="!msg.read" class="bg-blue-100 text-blue-700 text-[10px] font-bold">Nouveau</Badge>
+                  <span class="text-xs text-slate-400">{{ msg.date }}</span>
+                </div>
+              </div>
+
+              <div class="pl-12 space-y-3">
+                <p class="text-sm font-semibold text-slate-700">{{ msg.subject }}</p>
+                <p class="text-sm text-slate-600 leading-relaxed">{{ msg.message }}</p>
+
+                <div v-if="msg.reply_text" class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mt-2">
+                  <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-1">Votre réponse</p>
+                  <p class="text-sm text-emerald-800">{{ msg.reply_text }}</p>
+                </div>
+
+                <div v-if="adminReplyingTo === msg.id" class="space-y-3 mt-3">
+                  <Textarea
+                    v-model="adminReplyText"
+                    placeholder="Écrivez votre réponse..."
+                    class="min-h-[100px] text-sm"
+                  />
+                  <div class="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" class="text-xs" @click="adminReplyingTo = null; adminReplyText = ''">
+                      Annuler
+                    </Button>
+                    <Button size="sm" class="text-xs font-bold" :disabled="sendingAdminReply" @click="replyToAdminMessage(msg)">
+                      <Send class="w-3.5 h-3.5 mr-1" />
+                      {{ sendingAdminReply ? 'Envoi...' : 'Envoyer la réponse' }}
+                    </Button>
+                  </div>
+                </div>
+
+                <div v-else-if="!msg.replied_at" class="flex justify-end">
+                  <Button variant="outline" size="sm" class="text-xs font-bold" @click="adminReplyingTo = msg.id; adminReplyText = ''">
+                    <Reply class="w-3.5 h-3.5 mr-1" />Répondre
+                  </Button>
+                </div>
               </div>
             </div>
-            <div v-if="adminMessages.length === 0" class="text-center py-8 text-slate-400">
-              Aucun message
+
+            <div v-if="adminMessages.length === 0" class="text-center py-12 text-slate-400">
+              <Mail class="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p class="text-sm">Aucun message reçu</p>
             </div>
           </CardContent>
         </Card>
@@ -1107,6 +1227,80 @@ async function deleteNewsletter(id) {
               </label>
             </div>
           </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Edit Company Dialog -->
+    <Dialog v-model:open="showEditCompany">
+      <DialogContent class="sm:max-w-[550px]">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2">
+            <Edit class="w-5 h-5 text-primary" />
+            Modifier l'entreprise
+          </DialogTitle>
+          <DialogDescription>Modifiez les informations de <strong>{{ editingCompany?.name }}</strong>.</DialogDescription>
+        </DialogHeader>
+        <div class="grid gap-4 py-4">
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <Label class="text-xs font-bold uppercase text-slate-500">Nom de l'entreprise</Label>
+              <Input v-model="editForm.name" placeholder="Nom" />
+            </div>
+            <div class="space-y-2">
+              <Label class="text-xs font-bold uppercase text-slate-500">Domaine</Label>
+              <Input v-model="editForm.domain" placeholder="example.com" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <Label class="text-xs font-bold uppercase text-slate-500">Email</Label>
+              <Input v-model="editForm.email" type="email" placeholder="contact@entreprise.com" />
+            </div>
+            <div class="space-y-2">
+              <Label class="text-xs font-bold uppercase text-slate-500">Téléphone</Label>
+              <Input v-model="editForm.phone" placeholder="+257 79 XXX XXX" />
+            </div>
+          </div>
+          <div class="space-y-2">
+            <Label class="text-xs font-bold uppercase text-slate-500">Adresse</Label>
+            <Input v-model="editForm.address" placeholder="Ville, Rue, ..." />
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <Label class="text-xs font-bold uppercase text-slate-500">NIF</Label>
+              <Input v-model="editForm.nif" placeholder="400XXXXXXX" />
+            </div>
+            <div class="space-y-2">
+              <Label class="text-xs font-bold uppercase text-slate-500">Plan</Label>
+              <select v-model="editForm.plan" class="w-full h-10 px-3 rounded-md border border-slate-200 text-sm bg-white">
+                <option value="trial">Essai</option>
+                <option value="starter">Starter</option>
+                <option value="pro">Pro</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <Label class="text-xs font-bold uppercase text-slate-500">Montant mensuel (BIF)</Label>
+              <Input v-model="editForm.monthly_fee" type="number" placeholder="150000" />
+            </div>
+            <div class="space-y-2">
+              <Label class="text-xs font-bold uppercase text-slate-500">Statut</Label>
+              <select v-model="editForm.status" class="w-full h-10 px-3 rounded-md border border-slate-200 text-sm bg-white">
+                <option value="active">Actif</option>
+                <option value="trial">Essai</option>
+                <option value="suspended">Suspendu</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <Button variant="outline" @click="showEditCompany = false">Annuler</Button>
+          <Button :disabled="savingEdit" @click="saveEditCompany">
+            {{ savingEdit ? 'Enregistrement...' : 'Enregistrer' }}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
