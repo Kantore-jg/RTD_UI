@@ -49,6 +49,7 @@ const searchTerm = ref('')
 const filterStatus = ref('')
 const filterPriority = ref('')
 const filterPeriod = ref('')
+const filterEmployee = ref('')
 const showAddDialog = ref(false)
 const showEditDialog = ref(false)
 const editingTask = ref(null)
@@ -124,6 +125,9 @@ const filteredTasks = computed(() => {
   if (searchTerm.value) {
     const term = searchTerm.value.toLowerCase()
     list = list.filter(t => t.title.toLowerCase().includes(term) || (t.description || '').toLowerCase().includes(term))
+  }
+  if (filterEmployee.value) {
+    list = list.filter(t => t.assignees && t.assignees.some(a => (a.id || a) == filterEmployee.value))
   }
   if (filterStatus.value) {
     list = list.filter(t => t.status === filterStatus.value)
@@ -399,6 +403,10 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
         <option value="week">Cette semaine</option>
         <option value="month">Ce mois</option>
         <option value="year">Cette année</option>
+      </select>
+      <select v-if="isAdmin" v-model="filterEmployee" class="h-10 px-3 rounded-md border-2 text-sm bg-white font-bold">
+        <option value="">Tous les employés</option>
+        <option v-for="a in ASSIGNEES" :key="a.id" :value="a.id">{{ a.name }}</option>
       </select>
     </div>
 
