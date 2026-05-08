@@ -269,10 +269,10 @@ function statutVariant(statut) {
               <Zap class="mr-2 h-4 w-4" />
               {{ isClockedIn ? 'Pointer la sortie' : "Pointer l'arrivée" }}
             </Button>
-            <Button variant="outline" class="w-full" @click="handleQrScan">
+            <!-- <Button variant="outline" class="w-full" @click="handleQrScan">
               <QrCode class="mr-2 h-4 w-4" />
               Scanner QR Code
-            </Button>
+            </Button> -->
           </div>
         </CardContent>
       </Card>
