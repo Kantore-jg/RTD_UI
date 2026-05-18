@@ -54,53 +54,13 @@ async function handleLogin() {
 </script>
 
 <template>
-  <div class="flex min-h-screen">
-    <!-- Left Panel - Branding -->
-    <div class="hidden lg:flex lg:w-1/2 bg-foreground text-background relative overflow-hidden">
-      <div class="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-primary/10" />
-      <div class="relative z-10 flex flex-col justify-between p-12 w-full">
-        <div>
-          <router-link to="/" class="flex items-center gap-2">
-            <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-              <Zap class="text-white w-6 h-6" />
-            </div>
-            <span class="font-bold text-2xl tracking-tight">Registre Dynamique</span>
-          </router-link>
-        </div>
-
-        <div class="space-y-6 max-w-md">
-          <h1 class="text-4xl font-bold leading-tight">
-            Simplifiez la gestion de votre entreprise
-          </h1>
-          <p class="text-lg opacity-80 leading-relaxed">
-            Accédez à tous vos outils de gestion depuis une plateforme unique, intuitive et sécurisée.
-          </p>
-          <div class="space-y-4 pt-4">
-            <div class="flex items-center gap-3">
-              <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Lock class="w-4 h-4" />
-              </div>
-              <span class="text-sm opacity-80">Données chiffrées de bout en bout</span>
-            </div>
-            <div class="flex items-center gap-3">
-              <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Zap class="w-4 h-4" />
-              </div>
-              <span class="text-sm opacity-80">Temps de réponse rapide</span>
-            </div>
-          </div>
-        </div>
-
-        <p class="text-sm opacity-50">
-          &copy; {{ new Date().getFullYear() }} Registre Dynamique de Travail
-        </p>
-      </div>
-    </div>
-    <!-- le panel - tarifs -->
-     
+<div
+  class="relative flex min-h-screen bg-cover bg-center bg-no-repeat"
+  style="background-image: url('/images_presentation/login.png')"
+>
 
     <!-- Right Panel - Login Form -->
-    <div class="flex-1 flex items-center justify-center p-8 bg-background">
+    <div class="relative z-10 flex-1 flex items-center justify-center p-8">
       <div class="w-full max-w-md space-y-8">
         <div class="lg:hidden flex items-center gap-2 justify-center mb-4">
           <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
@@ -112,7 +72,7 @@ async function handleLogin() {
         <div class="text-center space-y-2">
           <h2 class="text-2xl font-bold tracking-tight">Bon retour parmi nous</h2>
           <p class="text-muted-foreground">Connectez-vous pour accéder à votre espace</p>
-        </div>
+        </div> 
 
         <Card>
           <CardContent class="pt-6">
@@ -162,16 +122,6 @@ async function handleLogin() {
                 </div>
               </div>
 
-              <div class="flex items-center gap-2">
-                <input
-                  id="remember"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-                />
-                <label for="remember" class="text-sm text-muted-foreground">
-                  Se souvenir de moi
-                </label>
-              </div>
 
               <Button class="w-full" :disabled="isLoading">
                 <template v-if="isLoading">

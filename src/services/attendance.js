@@ -1,16 +1,18 @@
 import api from './api'
 
+const multipart = { headers: { 'Content-Type': 'multipart/form-data' } }
+
 export const attendanceService = {
   list(params = {}) {
     return api.get('/attendance', { params })
   },
 
-  clockIn(data = {}) {
-    return api.post('/attendance/clock-in', data)
+  clockIn(formData) {
+    return api.post('/attendance/clock-in', formData, multipart)
   },
 
-  clockOut() {
-    return api.post('/attendance/clock-out')
+  clockOut(formData) {
+    return api.post('/attendance/clock-out', formData, multipart)
   },
 
   stats(params = {}) {

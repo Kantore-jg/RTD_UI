@@ -23,6 +23,8 @@ import {
   Menu,
   Moon,
   Sun,
+  Package,
+  BookOpen,
   Database,
   UserCircle,
 } from 'lucide-vue-next'
@@ -66,6 +68,7 @@ const adminNavItems = [
   { label: 'Tâches', icon: CheckSquare, path: '/tasks', moduleId: 'tasks' },
   { label: 'Projets', icon: Briefcase, path: '/projects', moduleId: 'projects' },
   { label: 'Finance', icon: Wallet, path: '/finance', moduleId: 'finance' },
+  { label: 'Gestion de ventes', icon: Package, path: '/inventory', moduleId: 'inventory' },  { label: 'Bibliothèque', icon: BookOpen, path: '/library', moduleId: 'library' },
   { label: 'Archives', icon: Archive, path: '/archives', moduleId: 'archives' },
   { label: 'Communication', icon: MessageSquare, path: '/communication', moduleId: 'communication' },
   { label: 'Dynamic Builder', icon: PlusCircle, path: '/builder', moduleId: 'builder' },
@@ -270,8 +273,11 @@ watch(isAdmin, (val) => {
       </header>
 
       <!-- Main content area with page transition -->
-      <main class="flex-1 overflow-auto p-8 relative">
-        <div class="max-w-7xl mx-auto h-full">
+      <main
+        class="flex-1 overflow-auto relative"
+        :class="route.meta.fullWidth ? 'w-full p-4 md:p-6' : 'p-8'"
+      >
+        <div :class="route.meta.fullWidth ? 'w-full max-w-none h-full' : 'max-w-7xl mx-auto h-full'">
           <router-view v-slot="{ Component, route: viewRoute }">
             <Transition name="page" mode="out-in">
               <component :is="Component" :key="viewRoute.path" />

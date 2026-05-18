@@ -24,6 +24,16 @@ const routes = [
       { path: 'tasks', component: () => import('@/pages/dashboard/TasksPage.vue'), meta: { moduleId: 'tasks' } },
       { path: 'projects', component: () => import('@/pages/dashboard/ProjectsPage.vue'), meta: { moduleId: 'projects' } },
       { path: 'finance', component: () => import('@/pages/dashboard/FinancePage.vue'), meta: { moduleId: 'finance' } },
+      {
+        path: 'inventory',
+        component: () => import('@/pages/dashboard/InventoryPage.vue'),
+        meta: { moduleId: 'inventory', fullWidth: true },
+      },
+      {
+        path: 'library',
+        component: () => import('@/pages/dashboard/LibraryPage.vue'),
+        meta: { moduleId: 'library', fullWidth: true },
+      },
       { path: 'attendance', component: () => import('@/pages/dashboard/AttendancePage.vue'), meta: { moduleId: 'attendance' } },
       { path: 'archives', component: () => import('@/pages/dashboard/ArchivesPage.vue'), meta: { moduleId: 'archives' } },
       { path: 'communication', component: () => import('@/pages/dashboard/CommunicationPage.vue'), meta: { moduleId: 'communication' } },

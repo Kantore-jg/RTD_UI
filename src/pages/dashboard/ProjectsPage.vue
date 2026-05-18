@@ -21,8 +21,13 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'vue-sonner'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
 import { projectService } from '@/services/projects'
 import { employeeService } from '@/services/employees'
+
+const authStore = useAuthStore()
+const { isAdmin, isEmployee } = storeToRefs(authStore)
 
 const loading = ref(true)
 const projects = ref([])
@@ -219,10 +224,12 @@ async function deleteProject(id) {
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-3xl font-bold tracking-tight">Projets</h1>
-        <p class="text-muted-foreground">Gérez et suivez l'ensemble de vos projets</p>
+        <h1 class="text-3xl font-bold tracking-tight">{{ isEmployee ? 'Mes Projets' : 'Projets' }}</h1>
+        <p class="text-muted-foreground">
+          {{ isEmployee ? 'Consultez les projets auxquels vous participez.' : 'Gérez et suivez l\'ensemble de vos projets' }}
+        </p>
       </div>
-      <Dialog v-model:open="showAddProject">
+      <Dialog v-if="isAdmin" v-model:open="showAddProject">
         <DialogTrigger as-child>
           <Button>
             <Plus class="mr-2 h-4 w-4" />Nouveau Projet

@@ -1,10 +1,9 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { cn } from '@/lib/utils'
+import { cn, storageUrl } from '@/lib/utils'
 import {
-  Clock, MapPin, QrCode, Calendar, AlertCircle,
-  CheckCircle2, Zap, BarChart3, TrendingUp, Filter,
-  Users, ArrowUpRight, Search, Download,
+  Clock, MapPin, Calendar, AlertCircle,
+  CheckCircle2, Zap, BarChart3, Search, Download, Camera, ImageIcon,
 } from 'lucide-vue-next'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,22 +12,32 @@ import { Input } from '@/components/ui/input'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { attendanceService } from '@/services/attendance'
+import AttendancePhotoCapture from '@/components/attendance/AttendancePhotoCapture.vue'
+import { useClockMetadata } from '@/composables/useClockMetadata'
 
 const authStore = useAuthStore()
-const { user, isAdmin, isEmployee } = storeToRefs(authStore)
-
-const today = new Date().toISOString().split('T')[0]
+const { user, isAdmin, isEmployee, employeeId } = storeToRefs(authStore)
+const { collect: collectMetadata } = useClockMetadata()
 
 const loading = ref(false)
+const clockSubmitting = ref(false)
 const attendanceData = ref([])
-const apiStats = ref(null)
 
 const isClockedIn = ref(false)
+const isDayComplete = ref(false)
 const clockInTime = ref(null)
+const clockOutTime = ref(null)
+const photoDialogOpen = ref(false)
+const photoCaptureMode = ref('arrivee')
+const previewPhoto = ref(null)
+const gpsLabel = ref(null)
 const currentTime = ref(
   new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 )
@@ -38,32 +47,103 @@ const searchTerm = ref('')
 
 let timer = null
 
-async function fetchAttendance() {
+function localToday() {
+  return new Date().toLocaleDateString('en-CA')
+}
+
+function normalizeDate(value) {
+  if (!value) return ''
+  const str = String(value)
+  if (str.includes('T')) {
+    const d = new Date(str)
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-CA')
+    }
+  }
+  return str.length >= 10 ? str.slice(0, 10) : str
+}
+
+function formatTime(value) {
+  if (value == null || value === '' || value === '—') return '—'
+  const s = String(value)
+  return s.length >= 5 ? s.slice(0, 5) : s
+}
+
+function sameEmployeeId(a, b) {
+  if (a == null || b == null) return false
+  return Number(a) === Number(b)
+}
+
+function mapAttendanceRecord(r) {
+  return {
+    ...r,
+    date: normalizeDate(r.date),
+    nom: r.employee?.name || r.nom || 'Inconnu',
+    employeeId: r.employee_id ?? r.employeeId,
+    poste: r.poste || '',
+    arrivee: formatTime(r.arrivee),
+    depart: r.depart ? formatTime(r.depart) : '—',
+    arriveePhotoUrl: r.arrivee_photo_url || storageUrl(r.arrivee_photo_path) || null,
+    departPhotoUrl: r.depart_photo_url || storageUrl(r.depart_photo_path) || null,
+  }
+}
+
+function upsertAttendanceRecord(raw) {
+  if (!raw) return
+  const mapped = mapAttendanceRecord(raw)
+  const idx = attendanceData.value.findIndex(
+    (r) =>
+      (mapped.id && r.id === mapped.id) ||
+      (normalizeDate(r.date) === mapped.date && sameEmployeeId(r.employeeId, mapped.employeeId)),
+  )
+  if (idx >= 0) {
+    attendanceData.value[idx] = { ...attendanceData.value[idx], ...mapped }
+  } else {
+    attendanceData.value.unshift(mapped)
+  }
+  syncClockState()
+}
+
+function syncClockState() {
+  const myEmpId = employeeId.value
+  const today = localToday()
+  const myTodayRecord = attendanceData.value.find(
+    (r) => normalizeDate(r.date) === today && sameEmployeeId(r.employeeId, myEmpId),
+  )
+
+  if (!myTodayRecord?.arrivee || myTodayRecord.arrivee === '—') {
+    isClockedIn.value = false
+    isDayComplete.value = false
+    clockInTime.value = null
+    clockOutTime.value = null
+    return
+  }
+
+  clockInTime.value = myTodayRecord.arrivee
+  const hasDepart = myTodayRecord.depart && myTodayRecord.depart !== '—'
+  isDayComplete.value = hasDepart
+  isClockedIn.value = !hasDepart
+  clockOutTime.value = hasDepart ? myTodayRecord.depart : null
+}
+
+async function fetchAttendance({ bustCache = false } = {}) {
   try {
     loading.value = true
-    const response = await attendanceService.list()
+    const params = { per_page: 500 }
+    if (isEmployee.value && employeeId.value) {
+      params.employee_id = employeeId.value
+    }
+    if (bustCache) {
+      params._refresh = Date.now()
+    }
+    const response = await attendanceService.list(params)
     const raw = response.data.data || response.data
-    attendanceData.value = (Array.isArray(raw) ? raw : []).map(r => ({
-      ...r,
-      nom: r.employee?.name || r.nom || 'Inconnu',
-      employeeId: r.employee_id || r.employeeId,
-      poste: r.poste || '',
-      arrivee: r.arrivee || '—',
-      depart: r.depart || '—',
-    }))
+    attendanceData.value = (Array.isArray(raw) ? raw : []).map(mapAttendanceRecord)
+    syncClockState()
   } catch (err) {
     toast.error('Erreur lors du chargement des présences')
   } finally {
     loading.value = false
-  }
-}
-
-async function fetchStats() {
-  try {
-    const response = await attendanceService.stats({ period: filterPeriod.value })
-    apiStats.value = response.data.data || response.data
-  } catch {
-    apiStats.value = null
   }
 }
 
@@ -73,62 +153,86 @@ onMounted(async () => {
   }, 1000)
 
   await fetchAttendance()
-
-  const myEmpId = user.value?.employee?.id || user.value?.employee_id
-  const myTodayRecord = attendanceData.value.find(
-    r => r.date === today && (r.employee_id === myEmpId || r.employeeId === myEmpId)
-  )
-  if (myTodayRecord && myTodayRecord.arrivee && myTodayRecord.arrivee !== '—') {
-    isClockedIn.value = !myTodayRecord.depart || myTodayRecord.depart === '—'
-    clockInTime.value = myTodayRecord.arrivee
-  }
-
-  await fetchStats()
 })
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
 
-async function toggleClock() {
+function openPhotoCapture() {
+  if (!employeeId.value) {
+    toast.error('Aucun profil employé associé à votre compte.')
+    return
+  }
+  if (isDayComplete.value) {
+    toast.info('Votre pointage du jour est déjà terminé. Aucune modification possible.')
+    return
+  }
+  if (!isClockedIn.value && attendanceData.value.some(
+    (r) => normalizeDate(r.date) === localToday() && sameEmployeeId(r.employeeId, employeeId.value),
+  )) {
+    toast.error('Pointage d\'arrivée déjà enregistré aujourd\'hui.')
+    syncClockState()
+    return
+  }
+  photoCaptureMode.value = isClockedIn.value ? 'depart' : 'arrivee'
+  photoDialogOpen.value = true
+}
+
+async function handlePhotoCapture(photoFile) {
+  clockSubmitting.value = true
   const now = new Date()
   const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
 
-  if (!isClockedIn.value) {
-    try {
-      await attendanceService.clockIn({ poste: user.value?.poste || 'Employé' })
-      isClockedIn.value = true
-      clockInTime.value = timeStr
-      toast.success(`Arrivée enregistrée à ${timeStr}`)
-      await fetchAttendance()
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Erreur lors du pointage d\'arrivée')
+  try {
+    const meta = await collectMetadata()
+    const formData = new FormData()
+    formData.append('photo', photoFile)
+    formData.append('poste', user.value?.employee?.role || user.value?.poste || 'Employé')
+    if (meta.latitude != null) formData.append('latitude', String(meta.latitude))
+    if (meta.longitude != null) formData.append('longitude', String(meta.longitude))
+    if (meta.device) formData.append('device', meta.device)
+
+    if (photoCaptureMode.value === 'arrivee') {
+      const { data } = await attendanceService.clockIn(formData)
+      upsertAttendanceRecord(data.data ?? data)
+      toast.success(`Arrivée enregistrée à ${clockInTime.value || timeStr} avec photo`)
+    } else {
+      const { data } = await attendanceService.clockOut(formData)
+      upsertAttendanceRecord(data.data ?? data)
+      toast.success(`Sortie enregistrée à ${clockOutTime.value || timeStr} avec photo`)
     }
-  } else {
-    try {
-      await attendanceService.clockOut()
-      isClockedIn.value = false
-      toast.success(`Sortie enregistrée à ${timeStr}`)
-      await fetchAttendance()
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Erreur lors du pointage de sortie')
+
+    if (meta.latitude != null && meta.longitude != null) {
+      gpsLabel.value = `${meta.latitude.toFixed(5)}, ${meta.longitude.toFixed(5)}`
     }
+
+    photoDialogOpen.value = false
+    await fetchAttendance({ bustCache: true })
+  } catch (err) {
+    const msg = err.response?.data?.message
+    const photoErr = err.response?.data?.errors?.photo?.[0]
+    toast.error(photoErr || msg || 'Erreur lors du pointage')
+  } finally {
+    clockSubmitting.value = false
   }
 }
 
-function handleQrScan() {
-  toast.info('Scan QR Code en cours de developpement... we\'re trying to do our best to make it work on the application mobile.')
+function showPhoto(url, label) {
+  if (!url) return
+  previewPhoto.value = { url, label }
 }
 
 function applyRoleFilter(records) {
-  if (isEmployee.value && user.value?.employeeId) {
-    return records.filter(r => r.employeeId === user.value.employeeId)
+  if (isEmployee.value && employeeId.value) {
+    return records.filter((r) => sameEmployeeId(r.employeeId, employeeId.value))
   }
   return records
 }
 
 const todayRecords = computed(() => {
-  let records = attendanceData.value.filter(e => e.date === today)
+  const today = localToday()
+  let records = attendanceData.value.filter(e => normalizeDate(e.date) === today)
   records = applyRoleFilter(records)
   if (searchTerm.value) {
     const term = searchTerm.value.toLowerCase()
@@ -156,9 +260,13 @@ const filteredRecords = computed(() => {
   return records.sort((a, b) => b.date.localeCompare(a.date))
 })
 
+const statsSource = computed(() => {
+  if (activeTab.value === 'today') return todayRecords.value
+  return filteredRecords.value
+})
+
 const stats = computed(() => {
-  if (apiStats.value) return apiStats.value
-  const records = filteredRecords.value
+  const records = statsSource.value
   const total = records.length
   const present = records.filter(r => r.statut === 'Présent').length
   const absent = records.filter(r => r.statut === 'Absent').length
@@ -187,9 +295,9 @@ const weeklyStats = computed(() => {
     const d = new Date(monday)
     d.setDate(monday.getDate() + i)
     const dateStr = d.toISOString().split('T')[0]
-    let dayRecords = attendanceData.value.filter(r => r.date === dateStr)
-    if (isEmployee.value && user.value?.employeeId) {
-      dayRecords = dayRecords.filter(r => r.employeeId === user.value.employeeId)
+    let dayRecords = attendanceData.value.filter(r => normalizeDate(r.date) === dateStr)
+    if (isEmployee.value && employeeId.value) {
+      dayRecords = dayRecords.filter(r => r.employeeId === employeeId.value)
     }
     const present = dayRecords.filter(r => r.statut === 'Présent' || r.statut === 'Retard').length
     const total = isEmployee.value ? 1 : totalEmployees
@@ -203,7 +311,7 @@ async function exportAttendance() {
     const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = `presence_${filterPeriod.value}_${today}.csv`
+    link.download = `presence_${filterPeriod.value}_${localToday()}.csv`
     link.click()
     URL.revokeObjectURL(link.href)
     toast.success('Données de présence exportées')
@@ -228,7 +336,11 @@ function statutVariant(statut) {
     <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
       <div>
         <h1 class="text-3xl font-bold tracking-tight">{{ isEmployee ? 'Ma Présence' : 'Présence' }}</h1>
-        <p class="text-muted-foreground">{{ isEmployee ? 'Suivez vos pointages et votre historique de présence.' : 'Suivi des pointages et de la présence du personnel.' }}</p>
+        <p class="text-muted-foreground">
+          {{ isEmployee
+            ? 'Pointage sécurisé par photo à l\'arrivée et au départ.'
+            : 'Suivi des pointages avec vérification photo du personnel.' }}
+        </p>
       </div>
       <div class="flex items-center gap-2">
         <Button v-if="isAdmin" variant="outline" class="font-bold border-2" @click="exportAttendance">
@@ -246,33 +358,51 @@ function statutVariant(statut) {
       <!-- Quick Clock Card -->
       <Card class="lg:col-span-1">
         <CardHeader>
-          <CardTitle>Pointage Rapide</CardTitle>
-          <CardDescription>Enregistrez votre arrivée ou départ</CardDescription>
+          <CardTitle>Pointage sécurisé</CardTitle>
+          <CardDescription>Photo obligatoire à l'arrivée et au départ</CardDescription>
         </CardHeader>
         <CardContent class="flex flex-col items-center gap-6">
           <div class="flex flex-col items-center gap-2">
             <div class="text-5xl font-bold tracking-tight tabular-nums">{{ currentTime }}</div>
             <div class="flex items-center gap-1 text-sm text-muted-foreground">
               <MapPin class="h-3.5 w-3.5" />
-              <span>Siège — Bâtiment A</span>
+              <span>{{ gpsLabel || 'GPS enregistré si autorisé' }}</span>
             </div>
           </div>
-          <Badge :variant="isClockedIn ? 'default' : 'secondary'" class="text-sm px-4 py-1">
-            <component :is="isClockedIn ? CheckCircle2 : Clock" class="mr-2 h-3.5 w-3.5" />
-            {{ isClockedIn ? `Pointé à ${clockInTime} — En service` : 'Non pointé' }}
+          <Badge
+            :variant="isDayComplete ? 'outline' : isClockedIn ? 'default' : 'secondary'"
+            class="text-sm px-4 py-1"
+          >
+            <component :is="isDayComplete ? CheckCircle2 : isClockedIn ? CheckCircle2 : Clock" class="mr-2 h-3.5 w-3.5" />
+            <template v-if="isDayComplete">
+              Journée terminée — {{ clockInTime }} → {{ clockOutTime }}
+            </template>
+            <template v-else-if="isClockedIn">
+              Pointé à {{ clockInTime }} — En service
+            </template>
+            <template v-else>
+              Non pointé
+            </template>
           </Badge>
           <div class="flex flex-col gap-3 w-full">
             <Button
+              v-if="!isDayComplete"
               :class="cn('w-full', isClockedIn ? 'bg-red-600 hover:bg-red-700' : '')"
-              @click="toggleClock"
+              :disabled="clockSubmitting || loading"
+              @click="openPhotoCapture"
             >
-              <Zap class="mr-2 h-4 w-4" />
+              <Camera class="mr-2 h-4 w-4" />
               {{ isClockedIn ? 'Pointer la sortie' : "Pointer l'arrivée" }}
             </Button>
-            <!-- <Button variant="outline" class="w-full" @click="handleQrScan">
-              <QrCode class="mr-2 h-4 w-4" />
-              Scanner QR Code
-            </Button> -->
+            <div
+              v-else
+              class="w-full rounded-lg border border-dashed px-4 py-3 text-center text-sm text-muted-foreground"
+            >
+              Pointage du jour enregistré. Les pointages ne peuvent pas être modifiés.
+            </div>
+            <p v-if="!isDayComplete" class="text-xs text-center text-muted-foreground">
+              Une photo sera demandée pour confirmer votre identité
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -300,9 +430,15 @@ function statutVariant(statut) {
                 <TableHead>Arrivée</TableHead>
                 <TableHead>Départ</TableHead>
                 <TableHead>Statut</TableHead>
+                <TableHead class="text-center">Photos</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
+              <TableRow v-if="loading">
+                <TableCell colspan="6" class="text-center py-8 text-muted-foreground">
+                  Chargement du registre…
+                </TableCell>
+              </TableRow>
               <TableRow v-for="entry in todayRecords" :key="entry.id">
                 <TableCell class="font-medium">{{ entry.nom }}</TableCell>
                 <TableCell class="text-sm text-muted-foreground">{{ entry.poste }}</TableCell>
@@ -311,9 +447,34 @@ function statutVariant(statut) {
                 <TableCell>
                   <Badge :variant="statutVariant(entry.statut)">{{ entry.statut }}</Badge>
                 </TableCell>
+                <TableCell>
+                  <div class="flex justify-center gap-1">
+                    <Button
+                      v-if="entry.arriveePhotoUrl"
+                      variant="ghost"
+                      size="icon"
+                      class="h-8 w-8"
+                      title="Photo arrivée"
+                      @click="showPhoto(entry.arriveePhotoUrl, `Arrivée — ${entry.nom}`)"
+                    >
+                      <ImageIcon class="h-4 w-4 text-emerald-600" />
+                    </Button>
+                    <Button
+                      v-if="entry.departPhotoUrl"
+                      variant="ghost"
+                      size="icon"
+                      class="h-8 w-8"
+                      title="Photo départ"
+                      @click="showPhoto(entry.departPhotoUrl, `Départ — ${entry.nom}`)"
+                    >
+                      <ImageIcon class="h-4 w-4 text-red-600" />
+                    </Button>
+                    <span v-if="!entry.arriveePhotoUrl && !entry.departPhotoUrl" class="text-xs text-muted-foreground">—</span>
+                  </div>
+                </TableCell>
               </TableRow>
               <TableRow v-if="todayRecords.length === 0">
-                <TableCell colspan="5" class="text-center py-8 text-muted-foreground">Aucun enregistrement aujourd'hui</TableCell>
+                <TableCell colspan="6" class="text-center py-8 text-muted-foreground">Aucun enregistrement aujourd'hui</TableCell>
               </TableRow>
             </TableBody>
           </Table>
@@ -471,6 +632,7 @@ function statutVariant(statut) {
                   <TableHead>Arrivée</TableHead>
                   <TableHead>Départ</TableHead>
                   <TableHead>Statut</TableHead>
+                  <TableHead class="text-center">Photos</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -483,9 +645,32 @@ function statutVariant(statut) {
                   <TableCell>
                     <Badge :variant="statutVariant(entry.statut)">{{ entry.statut }}</Badge>
                   </TableCell>
+                  <TableCell>
+                    <div class="flex justify-center gap-1">
+                      <Button
+                        v-if="entry.arriveePhotoUrl"
+                        variant="ghost"
+                        size="icon"
+                        class="h-8 w-8"
+                        @click="showPhoto(entry.arriveePhotoUrl, `Arrivée — ${entry.nom} (${entry.date})`)"
+                      >
+                        <ImageIcon class="h-4 w-4 text-emerald-600" />
+                      </Button>
+                      <Button
+                        v-if="entry.departPhotoUrl"
+                        variant="ghost"
+                        size="icon"
+                        class="h-8 w-8"
+                        @click="showPhoto(entry.departPhotoUrl, `Départ — ${entry.nom} (${entry.date})`)"
+                      >
+                        <ImageIcon class="h-4 w-4 text-red-600" />
+                      </Button>
+                      <span v-if="!entry.arriveePhotoUrl && !entry.departPhotoUrl" class="text-xs text-muted-foreground">—</span>
+                    </div>
+                  </TableCell>
                 </TableRow>
                 <TableRow v-if="filteredRecords.length === 0">
-                  <TableCell colspan="6" class="text-center py-8 text-muted-foreground">Aucun enregistrement trouvé</TableCell>
+                  <TableCell colspan="7" class="text-center py-8 text-muted-foreground">Aucun enregistrement trouvé</TableCell>
                 </TableRow>
               </TableBody>
             </Table>
@@ -493,5 +678,27 @@ function statutVariant(statut) {
         </Card>
       </TabsContent>
     </Tabs>
+
+    <AttendancePhotoCapture
+      :open="photoDialogOpen"
+      :mode="photoCaptureMode"
+      :loading="clockSubmitting"
+      @update:open="(v) => (photoDialogOpen = v)"
+      @capture="handlePhotoCapture"
+    />
+
+    <Dialog :open="!!previewPhoto" @update:open="(v) => !v && (previewPhoto = null)">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{{ previewPhoto?.label }}</DialogTitle>
+        </DialogHeader>
+        <img
+          v-if="previewPhoto?.url"
+          :src="previewPhoto.url"
+          :alt="previewPhoto.label"
+          class="w-full rounded-lg border object-contain max-h-[70vh]"
+        />
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

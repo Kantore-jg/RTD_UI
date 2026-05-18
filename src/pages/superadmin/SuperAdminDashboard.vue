@@ -83,6 +83,8 @@ const allModules = [
   { id: 'communication', label: 'Communication' },
   { id: 'builder', label: 'Module Builder' },
   { id: 'attendance', label: 'Présence' },
+  { id: 'inventory', label: 'Stock & inventaire' },
+  { id: 'library', label: 'Bibliothèque' },
 ]
 
 async function fetchCompanies() {
