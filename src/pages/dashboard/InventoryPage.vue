@@ -21,7 +21,6 @@ import { inventoryService } from '@/services/inventory'
 const loading = ref(false)
 const tab = ref('products')
 const products = ref([])
-const categories = ref([])
 const movements = ref([])
 const sales = ref([])
 const invoices = ref([])
@@ -40,7 +39,6 @@ const showProductDialog = ref(false)
 const editingProduct = ref(null)
 const productForm = ref({
   name: '', sku: '', sale_price: '', purchase_price: '', quantity_on_hand: '', min_stock: '', unit: 'unité',
-  inventory_category_id: '',
 })
 
 const cart = ref([])
@@ -74,11 +72,6 @@ const invoiceSaleId = ref('')
 
 function unwrapPaginated(res) {
   return res.data?.data ?? res.data
-}
-
-async function fetchCategories() {
-  const { data } = await inventoryService.categories()
-  categories.value = Array.isArray(data) ? data : []
 }
 
 async function fetchProducts() {
@@ -139,7 +132,6 @@ async function fetchAlerts() {
 }
 
 onMounted(async () => {
-  await fetchCategories()
   await fetchProducts()
 })
 
@@ -163,7 +155,6 @@ function openNewProduct() {
   editingProduct.value = null
   productForm.value = {
     name: '', sku: '', sale_price: '', purchase_price: '', quantity_on_hand: '', min_stock: '', unit: 'unité',
-    inventory_category_id: '',
   }
   showProductDialog.value = true
 }
@@ -178,7 +169,6 @@ function openEditProduct(p) {
     quantity_on_hand: String(p.quantity_on_hand ?? ''),
     min_stock: String(p.min_stock ?? ''),
     unit: p.unit || 'unité',
-    inventory_category_id: p.inventory_category_id || '',
   }
   showProductDialog.value = true
 }
@@ -193,7 +183,6 @@ async function saveProduct() {
       quantity_on_hand: Math.round(Number(productForm.value.quantity_on_hand) || 0),
       min_stock: Math.round(Number(productForm.value.min_stock) || 0),
       unit: productForm.value.unit || 'unité',
-      inventory_category_id: productForm.value.inventory_category_id || null,
     }
     if (editingProduct.value) {
       await inventoryService.updateProduct(editingProduct.value.id, payload)
@@ -853,13 +842,6 @@ const topProductsBars = computed(() => {
               <Label>Stock min.</Label>
               <Input v-model="productForm.min_stock" type="number" step="1" min="0" />
             </div>
-          </div>
-          <div class="space-y-1">
-            <Label>Catégorie</Label>
-            <select v-model="productForm.inventory_category_id" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-              <option value="">—</option>
-              <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-            </select>
           </div>
           <Button @click="saveProduct">Enregistrer</Button>
         </div>

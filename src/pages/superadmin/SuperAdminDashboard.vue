@@ -525,10 +525,10 @@ async function deleteNewsletter(id) {
           <Mail class="w-3.5 h-3.5 mr-1" />
           {{ adminMessages.filter(m => !m.read).length }} message(s)
         </Badge>
-        <Button variant="outline" size="sm" class="text-xs font-bold uppercase tracking-wider">
+        <!-- <Button variant="outline" size="sm" class="text-xs font-bold uppercase tracking-wider">
           <Activity class="w-3.5 h-3.5 mr-1" />
           System Health
-        </Button>
+        </Button> -->
       </div>
     </div>
 
